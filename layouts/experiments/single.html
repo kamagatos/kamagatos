@@ -1,0 +1,7 @@
+{{ define "main" }}
+<article class="experiment">
+  <header class="article-header"><p class="eyebrow">Interactive essay</p><h1>{{ .Title }}</h1>{{ with .Description }}<p class="dek">{{ . }}</p>{{ end }}</header>
+  <div class="experiment-body">{{ .Content }}</div>
+</article>
+{{ end }}
+

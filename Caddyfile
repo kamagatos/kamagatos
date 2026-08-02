@@ -1,0 +1,23 @@
+www.kamagatos.com {
+	root * {$SITE_ROOT:/srv/kamagatos/public}
+	encode zstd gzip
+	file_server
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	@immutable path /css/* /js/*
+	header @immutable Cache-Control "public, max-age=31536000, immutable"
+
+	handle_errors {
+		rewrite * /404.html
+		file_server
+	}
+}
+
+kamagatos.com, blog.kamagatos.com {
+	redir https://www.kamagatos.com{uri} permanent
+}

@@ -1,0 +1,9 @@
+<header class="site-header">
+  <a class="wordmark" href="{{ site.Home.RelPermalink }}" aria-label="{{ site.Title }}, home">
+    <span aria-hidden="true">K</span>{{ site.Title }}
+  </a>
+  <nav aria-label="Main navigation">
+    {{ range site.Menus.main }}<a href="{{ .URL }}"{{ if $.IsMenuCurrent .Menu . }} aria-current="page"{{ end }}>{{ .Name }}</a>{{ end }}
+  </nav>
+</header>
+

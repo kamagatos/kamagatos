@@ -1,0 +1,27 @@
+{{ define "main" }}
+<section class="hero">
+  <p class="eyebrow">A personal corner of the web</p>
+  <h1>Ideas worth keeping,<br><em>things worth trying.</em></h1>
+  <p class="lede">Essays, cultural notes, and interactive explanations—published when they are ready, kept for as long as they are useful.</p>
+</section>
+
+{{ $posts := where site.RegularPages "Section" "posts" }}
+<section class="home-section">
+  <div class="section-heading"><h2>Recent writing</h2><a href="/posts/">All writing →</a></div>
+  <div class="post-list">
+    {{ range first 4 $posts.ByDate.Reverse }}
+      <article><time datetime="{{ .Date.Format "2006-01-02" }}">{{ .Date.Format "02 Jan 2006" }}</time><div><h3><a href="{{ .RelPermalink }}">{{ .Title }}</a></h3><p>{{ .Description | default .Summary }}</p></div></article>
+    {{ else }}<p class="empty">The first piece is taking shape.</p>{{ end }}
+  </div>
+</section>
+
+{{ $timeless := where site.RegularPages "Section" "pages" }}
+<section class="home-section cards-section">
+  <div class="section-heading"><h2>Timeless</h2><a href="/pages/">Browse the collection →</a></div>
+  <div class="card-grid">{{ range first 3 $timeless.ByTitle }}<a class="card" href="{{ .RelPermalink }}"><span>Evergreen</span><h3>{{ .Title }}</h3><p>{{ .Description }}</p></a>{{ end }}</div>
+</section>
+
+{{ $experiments := where site.RegularPages "Section" "experiments" }}
+{{ with first 1 $experiments }}<section class="lab-callout"><p class="eyebrow">From the lab</p>{{ range . }}<h2><a href="{{ .RelPermalink }}">{{ .Title }}</a></h2><p>{{ .Description }}</p><a class="button" href="{{ .RelPermalink }}">Open experiment <span>↗</span></a>{{ end }}</section>{{ end }}
+{{ end }}
+

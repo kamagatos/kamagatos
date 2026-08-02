@@ -1,0 +1,10 @@
+{{ define "main" }}
+<header class="page-intro"><p class="eyebrow">{{ if eq .Section "posts" }}Chronological{{ else if eq .Section "pages" }}Evergreen{{ else }}Interactive{{ end }}</p><h1>{{ .Title }}</h1>{{ with .Content }}<div class="intro-copy">{{ . }}</div>{{ end }}</header>
+<div class="archive-list">
+  {{ range .Pages.ByDate.Reverse }}<article>
+    <div>{{ if eq .Section "posts" }}<time datetime="{{ .Date.Format "2006-01-02" }}">{{ .Date.Format "2006 · 01 · 02" }}</time>{{ else }}<span class="item-kind">{{ if eq .Section "experiments" }}Experiment{{ else }}Reference{{ end }}</span>{{ end }}</div>
+    <div><h2><a href="{{ .RelPermalink }}">{{ .Title }}</a></h2><p>{{ .Description | default .Summary }}</p>{{ with .Params.tags }}<ul class="tags">{{ range . }}<li>{{ . }}</li>{{ end }}</ul>{{ end }}</div>
+  </article>{{ else }}<p class="empty">Nothing published here yet.</p>{{ end }}
+</div>
+{{ end }}
+

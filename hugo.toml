@@ -1,0 +1,47 @@
+baseURL = "https://www.kamagatos.com/"
+languageCode = "en-us"
+title = "Kamagatos"
+enableRobotsTXT = true
+summaryLength = 28
+
+[params]
+  description = "Notes, essays, and small experiments."
+  author = "Kamagatos"
+  accent = "#e95d3c"
+
+[permalinks]
+  posts = "/writing/:slug/"
+  pages = "/:slug/"
+  experiments = "/lab/:slug/"
+
+[taxonomies]
+  tag = "tags"
+
+[outputs]
+  home = ["HTML", "RSS"]
+  section = ["HTML", "RSS"]
+
+[markup]
+  [markup.goldmark]
+    [markup.goldmark.renderer]
+      unsafe = true
+  [markup.highlight]
+    noClasses = false
+
+[menus]
+  [[menus.main]]
+    name = "Writing"
+    pageRef = "/posts"
+    weight = 10
+  [[menus.main]]
+    name = "Timeless"
+    pageRef = "/pages"
+    weight = 20
+  [[menus.main]]
+    name = "Lab"
+    pageRef = "/experiments"
+    weight = 30
+  [[menus.main]]
+    name = "About"
+    pageRef = "/about"
+    weight = 40
