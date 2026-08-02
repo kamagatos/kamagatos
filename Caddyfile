@@ -1,6 +1,7 @@
 www.kamagatos.com {
 	root * {$SITE_ROOT:/srv/kamagatos/public}
 	encode zstd gzip
+	redir /timeless-music-from-cote-divoire/ /timeless-music-from-the-world/ permanent
 	file_server
 
 	header {
