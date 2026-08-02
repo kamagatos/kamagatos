@@ -1,5 +1,6 @@
 ---
 title: "Attempt #n"
+slug: "attempt-n"
 date: 2025-10-23T06:51:00Z
 lastmod: 2025-10-23T07:02:31Z
 description: "Another attempt at returning to blogging after more than twenty years."

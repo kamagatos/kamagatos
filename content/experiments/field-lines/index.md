@@ -1,5 +1,6 @@
 ---
 title: "Drawing with Orbits"
+slug: "field-lines"
 description: "A tiny interactive sketch about attraction, momentum, and paths."
 ---
 
@@ -12,4 +13,3 @@ description: "A tiny interactive sketch about attraction, momentum, and paths."
 </div>
 
 The sketch above is a minimal example of an interactive article. Its JavaScript and CSS sit beside this Markdown file, so a complex piece can have its own visual language without leaking into the rest of the site.
-

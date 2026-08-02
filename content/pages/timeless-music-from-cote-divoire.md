@@ -1,5 +1,6 @@
 ---
 title: "Timeless Music from the world"
+slug: "timeless-music-from-cote-divoire"
 description: "Music that has endured beyond a fleeting moment, organized by country and release date."
 lastmod: 2025-10-23T16:31:22Z
 evergreen: true
