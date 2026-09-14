@@ -17,7 +17,7 @@
     "build": "h_compile"
   },
   "dependencies": {
-    "@eldon/h": "github:eldonlabs/h#5bdd05a9028746c99f23f97236303ca64d0b4228",
+    "@eldon/h": "github:eldonlabs/h",
     "glob": "13.0.6"
   },
   "devDependencies": {
