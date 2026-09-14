@@ -1,0 +1,32 @@
+{
+    "compilerOptions": {
+        "incremental": true,
+        "declaration": false,
+        "allowJs": true,
+        "strict": true,
+        "esModuleInterop": true,
+        "strictNullChecks": true,
+        "module": "NodeNext",
+        "target": "es6",
+        "noImplicitReturns": true,
+        "noImplicitAny": true,
+        "alwaysStrict": true,
+        "moduleResolution": "nodenext",
+        "noUnusedLocals": true,
+        "removeComments": true,
+        "strictFunctionTypes": true,
+        "strictPropertyInitialization": true,
+        "noImplicitThis": true,
+        "resolveJsonModule": true,
+        "strictBindCallApply": true,
+        "skipLibCheck": true,
+        "jsx": "react",
+        "sourceMap": true,
+        "lib": ["dom", "scripthost", "es2015", "es2016", "es2017", "es2021"],
+        "outDir": "./dist",
+        "rootDirs": ["./"],
+        "typeRoots": ["node_modules/@types"],
+        "paths": {}
+    },
+    "exclude": [".vscode", "generated", "**/.git", ".git", "types", "dist", "node_modules", "tmp"]
+}

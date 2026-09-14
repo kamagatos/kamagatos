@@ -1,5 +1,16 @@
-/public/
-/resources/_gen/
-.hugo_build.lock
 .DS_Store
+npm-debug.*
+node_modules/**/*
+node_modules
+logs/
+build/
+dist/
+tmp/
+*.generated.*
+secrets
+cdk.out/
 
+/target/
+target/
+Cargo.toml
+Cargo.lock

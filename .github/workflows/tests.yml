@@ -1,0 +1,57 @@
+name: Tests
+
+on:
+    push: { branches: [main] }
+    pull_request: { branches: ['*'] }
+
+jobs:
+    tests:
+        runs-on: ubuntu-24.04
+        timeout-minutes: 30
+        services:
+            rabbitmq:
+                image: rabbitmq:4.1.0-management
+                ports: ['5672:5672']
+                env: { RABBITMQ_DEFAULT_USER: guest, RABBITMQ_DEFAULT_PASS: guest }
+            postgres:
+                image: postgres:17.5-alpine
+                ports: ['5432:5432']
+                env: { POSTGRES_USER: eldon, POSTGRES_PASSWORD: eldon, POSTGRES_DB: eldon }
+                options: >-
+                    --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+            redis:
+                image: redis:8.0-alpine
+                ports: ['6379:6379']
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version-file: package.json
+                  cache: npm
+            - name: install and build
+              env:
+                  # @eldon/h is installed from the private eldonlabs/h repository.
+                  # The lockfile may pin the dependency as an ssh:// URL, so rewrite both forms.
+                  GIT_CONFIG_COUNT: '4'
+                  GIT_CONFIG_KEY_0: url.https://x-access-token:${{ secrets.H_READ_TOKEN }}@github.com/.insteadOf
+                  GIT_CONFIG_VALUE_0: https://github.com/
+                  GIT_CONFIG_KEY_1: url.https://x-access-token:${{ secrets.H_READ_TOKEN }}@github.com/.insteadOf
+                  GIT_CONFIG_VALUE_1: 'ssh://git@github.com/'
+                  GIT_CONFIG_KEY_2: url.https://x-access-token:${{ secrets.H_READ_TOKEN }}@github.com/.insteadOf
+                  GIT_CONFIG_VALUE_2: 'git@github.com:'
+                  # actions/checkout stores the job token as an Authorization header in the repo's git
+                  # config, which would override the token in the URL: clear it for this step.
+                  GIT_CONFIG_KEY_3: http.https://github.com/.extraheader
+                  GIT_CONFIG_VALUE_3: ''
+              run: |
+                  npm ci
+                  cp secrets_template secrets
+                  npx h_compile
+                  sudo timedatectl set-timezone America/Los_Angeles
+            - name: presubmit
+              run: npx h run :presubmit --allfiles
+            - name: tests
+              run: npx h test :all_tests --env test
+            - name: build web assets
+              run: |
+                  npx h run apps/blog/web:build
