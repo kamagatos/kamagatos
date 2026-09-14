@@ -1,0 +1,93 @@
+@use 'core/webclient/styles/website_base';
+@use 'core/webclient/components/website_components/WebsiteLayout.scss';
+@use 'core/webclient/components/website_components/HeaderSection.scss';
+@use 'core/webclient/components/website_components/FooterSection.scss';
+@use './vars.scss';
+
+.field_lines_page {
+    max-width: 950px;
+    margin: 0 auto;
+    padding: 40px 16px 80px;
+
+    h1 {
+        margin: 0 0 8px;
+        font-size: 2.4rem;
+        line-height: 1.1;
+    }
+
+    .field_lines_description {
+        margin: 0 0 32px;
+        color: var(--Color___grey_600);
+        font-size: 1.2rem;
+    }
+
+    .field_lines_note {
+        margin-top: 24px;
+        color: var(--Color___grey_700);
+    }
+}
+
+.orbit_lab {
+    position: relative;
+    overflow: hidden;
+    min-height: 65vh;
+    background: #111713;
+    color: #eef0e8;
+    border-radius: 2px;
+
+    canvas {
+        display: block;
+        width: 100%;
+        height: 65vh;
+        touch-action: none;
+    }
+}
+
+.orbit_controls {
+    position: absolute;
+    left: 24px;
+    bottom: 24px;
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 30px;
+    width: calc(100% - 48px);
+    pointer-events: none;
+
+    p {
+        max-width: 390px;
+        margin: 0;
+        font-size: 1rem;
+        line-height: 1.45;
+        color: #c5cabf;
+    }
+
+    button {
+        pointer-events: auto;
+        border: 1px solid #7d857a;
+        background: transparent;
+        color: white;
+        padding: 9px 15px;
+        font-size: 0.68rem;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        cursor: pointer;
+
+        &:hover {
+            background: white;
+            color: #111713;
+        }
+    }
+}
+
+@media (max-width: 600px) {
+    .orbit_controls {
+        align-items: flex-start;
+        flex-direction: column;
+
+        p {
+            max-width: 280px;
+        }
+    }
+}
