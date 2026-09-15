@@ -1,6 +1,6 @@
 import { AppType } from '@eldon/h'
 import { SEC_MS } from '@eldon/h/library/date'
-import { getAppTasks, runTestsTask } from '@eldon/h/tasks'
+import { getAppTasks, runTestsTask, applyDbSchemaTask } from '@eldon/h/tasks'
 import envs from './envs.js'
 
 const {
@@ -54,6 +54,12 @@ const {
 
 export const server = serverTasks
 export { build, release, deploy }
+
+/**
+ * Creates or updates the app's database tables.
+ * Usage: h run apps/blog/web:apply_db_schema --server_name=kamagatosprod --env=production
+ */
+export const apply_db_schema = [applyDbSchemaTask({})]
 
 export const all_tests = [
     runTestsTask({

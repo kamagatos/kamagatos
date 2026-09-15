@@ -12,7 +12,19 @@ import {
     lintCodeTask,
     preventCheckinSecretsTask,
     validateManifestsTask,
-    compressImagesTask
+    compressImagesTask,
+    deployInfraTask,
+    provisionHetznerServerTask,
+    setupServerTask,
+    serverStatusTask,
+    serverServicesTask,
+    serverLogsTask,
+    deploymentMonitorTask,
+    rollbackDeploymentTask,
+    backupPostgresTask,
+    restorePostgresTask,
+    cleanupServerTask,
+    securityAuditTask
 } from '@eldon/h/tasks'
 import { cliLogger as logger } from '@eldon/h/h'
 
@@ -51,6 +63,30 @@ export const lint = [lintCodeTask({})]
  * Runs the `all_tests` target of every app in the repository.
  */
 export const all_tests = getTests('all_tests')
+
+/**
+ * Deploys the infrastructure described in h.config.ts (DNS zone, S3, SES).
+ * Usage: h run :deployinfra --env=production [--dry_run=true]
+ */
+export const deployinfra = [deployInfraTask({})]
+
+/**
+ * Server operations for the servers declared in h.config.ts.
+ * Usage: h run :provisionserver --name=kamagatos-prod   (needs HCLOUD_TOKEN in `secrets`)
+ *        h run :setupserver --server_name=kamagatosprod
+ *        h run :status --server_name=kamagatosprod --env=production
+ */
+export const provisionserver = [provisionHetznerServerTask({})]
+export const setupserver = [setupServerTask({})]
+export const status = [serverStatusTask({})]
+export const services = [serverServicesTask({})]
+export const logs = [serverLogsTask({})]
+export const monitor = [deploymentMonitorTask({})]
+export const rollback = [rollbackDeploymentTask({})]
+export const backup_postgres = [backupPostgresTask({})]
+export const restore_postgres = [restorePostgresTask({})]
+export const cleanup = [cleanupServerTask({})]
+export const security_audit = [securityAuditTask({})]
 
 /**
  * Lists all targets in the repository.
