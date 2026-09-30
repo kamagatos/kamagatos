@@ -151,3 +151,149 @@ procedure ("forward supplier invoices to Kam with a one-line summary") is the li
 9. Learning
 10. Debugger, safety, and the eldon3 mapping
 11. Milestones and the test harness
+
+---
+
+## 2. Perception
+
+Senses turn physical stimuli into signals the brain can use. The eye does not send pictures; it sends edges, motion
+and contrast, and later stages build objects out of them, helped by what the brain already expects to see. Perception
+is continuous, parallel, cheap, and mostly ignored.
+
+For Nia, a stimulus is an email, a chat message, a calendar change, a Notion edit, a timer, the result of her own
+action, or a signal from one of her drives. Perception turns each into a **percept**: a small structured record that
+says who did what, to which entity, when, and where.
+
+### 2.1 Senses
+
+A sense is a source of stimuli plus the code that reads it (the receptor). Each integration an agent is granted
+becomes one or more senses. Internal sources are senses too, so everything enters through one door.
+
+| Sense           | Stimulus                                    | Receptor                                                   |
+| :-------------- | :------------------------------------------ | :--------------------------------------------------------- |
+| `mail`          | New or changed message in a mailbox         | Poll or watch; headers and snippet only                    |
+| `chat`          | Message in an Abe conversation              | Push from the app                                          |
+| `calendar`      | Event created, moved, cancelled, or near    | Poll a rolling window; diff against the last snapshot      |
+| `notion`        | Page created or edited                      | Poll `last_edited_time`; diff blocks against last snapshot |
+| `timer`         | An expectation's deadline, a scheduled tick | The scheduler                                              |
+| `outcome`       | Result of the agent's own action            | The tool runner                                            |
+| `drive`         | A drive crossed its set-point               | The regulator (Chapter 6)                                  |
+| `web`           | Result of a requested read                  | Only on demand (see active sensing)                        |
+
+A revoked or failing integration is a numb sense. The receptor emits a stimulus saying so, and the agent perceives its
+own numbness instead of silently going blind. That is how Nia ends up telling Kam "I lost access to the calendar"
+instead of missing meetings.
+
+### 2.2 Shapes
+
+```typescript
+type Stimulus = {
+  id: string
+  at: Date                  // when it happened in the world
+  sensedAt: Date            // when the receptor saw it
+  sense: SenseKind
+  accountId?: string        // which integration account
+  externalId?: string       // for de-duplication (message id, page id + version)
+  payload: unknown          // raw, as received
+}
+
+type Percept = {
+  id: string
+  stimulusId: string
+  at: Date
+  sense: SenseKind
+  space: SpaceRef           // where in the agent's world: mailbox, thread, page, channel
+  actor: EntityRef | null   // who caused it; null for timers and drives
+  entities: EntityRef[]     // everything recognised: people, documents, projects, amounts
+  changes: Change[]         // what changed, as facts: "message added to thread T"
+  content?: {               // present only after a focused read (2.4)
+    text: string
+    intent?: 'request' | 'question' | 'information' | 'notification' | 'social'
+    asks?: Ask[]            // things someone wants done, with who and by when
+    summary: string
+  }
+  signature: string         // stable hash of (sense, actor, kind) for habituation
+  seenBefore: number        // how many times this signature has been perceived
+}
+
+type Change =
+  | { kind: 'added'; entity: EntityRef; to: SpaceRef }
+  | { kind: 'edited'; entity: EntityRef; diff?: string }
+  | { kind: 'removed'; entity: EntityRef }
+  | { kind: 'moved'; entity: EntityRef; from: SpaceRef; to: SpaceRef }
+  | { kind: 'approaching'; entity: EntityRef; in: Duration }   // an event or deadline
+  | { kind: 'level'; drive: DriveKind; value: number }        // internal
+```
+
+An `EntityRef` points into semantic memory (Chapter 4) or, for something never seen, into a **candidate** entity
+created on the spot with low confidence. Perception may propose entities; only consolidation promotes them.
+
+### 2.3 Stages
+
+Perception is a pipeline, and each stage is cheaper and more common than the next. The order matters: the deterministic
+stages do the bulk of the work, and the model sees only what survives.
+
+1. **Receptor.** Source-specific parsing: ids, timestamps, headers, participants, thread ids, diffs. Deterministic.
+   Produces the `Stimulus` and the skeleton of the `Percept`.
+2. **Features.** Mentions, dates, amounts, URLs, reply markers, "urgent" tokens, language. Regex and parsers.
+3. **Recognition.** Entity resolution against semantic memory. Identifiers first (email address, page id, calendar id),
+   then names. A match fills `actor` and `entities`. No match creates a candidate.
+4. **Priors.** Match the percept against open expectations (Chapter 7). "Reply from the supplier about the invoice,
+   this week" matches a mail from the supplier's domain with "invoice" in the subject. A matched expectation lends its
+   interpretation to the percept, and the next stage can be skipped.
+5. **Interpretation.** For natural-language content only, and only when attended (2.4): a small model call that returns
+   `intent`, `asks` and `summary` as structured output. Batched per tick. This is the one place the LLM takes part in
+   perception, on the cheapest tier.
+
+Stages 1 to 4 run on every stimulus. Stage 5 runs on the few that matter.
+
+### 2.4 Peripheral and focused sensing
+
+The eye has a high-resolution centre and a blurry periphery, and the brain moves the centre to what attention picks.
+We copy that.
+
+- **Peripheral sensing** is what receptors do on their own: metadata, participants, subject lines, snippets, diffs. It
+  is enough to compute salience (Chapter 3) and costs nothing but API calls.
+- **Focused sensing** fetches the full content: the mail body, the whole page, the thread. It happens only when
+  attention selects a percept, or when the executive asks for it as an action ("read this thread"). The result comes
+  back as a new percept with `content` filled in.
+
+Nia's newsletter is perceived peripherally (sender, subject, snippet), scores low, and is never read in full. The
+supplier's invoice is read in full because it won attention. Reading is an act, and it shows up in the trace.
+
+### 2.5 Time and space
+
+Every percept has two times: when it happened (`at`) and when Nia saw it (`sensedAt`). The gap matters: a mail that
+arrived while she was asleep is old news, not a fresh event, and salience uses `at`.
+
+Space for a digital agent is the place in its world: this mailbox, this thread, this Notion page, this chat. Spaces
+nest (page inside workspace, message inside thread inside mailbox). A percept's space is what lets attention ask "does
+this touch what I am doing", and what lets episodes answer "where was I".
+
+### 2.6 Habituation
+
+Repeated identical stimuli fade. The daily newsletter, the recurring reminder, the bot that posts every hour. Perception
+computes a `signature` (sense, actor, kind of change) and counts how often it has been seen. Attention turns the count
+into lower novelty (Chapter 3). A change in the pattern (the newsletter arrives from a new address, or twice in a day)
+breaks the signature and the stimulus is novel again.
+
+### 2.7 What perception does not do
+
+- It does not decide or act.
+- It does not write facts. It writes stimuli, percepts, and candidate entities.
+- It does not read full content on its own.
+- It does not call the model except for interpretation of attended text.
+
+### 2.8 The invoice mail, perceived
+
+```text
+stimulus   mail, account=kam@…, externalId=<msg-id>, at=09:11:40
+receptor   from=billing@acme.com  to=kam@…  subject="Invoice 2291 – due Oct 15"  thread=T-88  snippet="Please find…"
+features   amount=€1,240  date=Oct 15  urgentTokens=none  isReply=false
+recognise  actor → Person "Acme billing" (id P-31, seen 6 times)   entities → Org "Acme" (O-4), Amount, Date
+priors     expectation E-207 "Acme invoice, this week" → matched, early
+interpret  skipped (expectation supplies intent=request, ask="pay 1240 by Oct 15")
+percept    space=mailbox/T-88  changes=[added message to T-88, approaching deadline Oct 15]  signature=mail:P-31:invoice  seenBefore=5
+```
+
+Salience will decide what happens to it next.
