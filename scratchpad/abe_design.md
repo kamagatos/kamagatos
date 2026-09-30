@@ -297,3 +297,130 @@ percept    space=mailbox/T-88  changes=[added message to T-88, approaching deadl
 ```
 
 Salience will decide what happens to it next.
+
+---
+
+## 3. Attention and working memory
+
+The brain senses far more than it can think about. A salience network picks the few things that get through, and a
+small working memory holds them while the prefrontal cortex works. Capacity is about four chunks. That limit is not a
+weakness we should engineer away: it is what forces the brain to recall, summarise and prioritise, and it is what will
+keep Nia's prompts small and her trace readable.
+
+### 3.1 Salience
+
+Each percept gets one score. Bottom-up terms come from the percept itself; top-down terms come from what the agent is
+doing and who it is.
+
+```text
+salience = wN·novelty + wG·goal + wA·actor + wU·urgency + wV·arousal + wS·self
+```
+
+| Term      | Source                | How it is computed                                                                   |
+| :-------- | :-------------------- | :----------------------------------------------------------------------------------- |
+| novelty   | Predict step (2.3 §4) | 0.1 if an expectation matched, 0.5 if it matched loosely, 1.0 if nothing predicted it; then divided by `1 + log(1 + seenBefore)` for habituation |
+| goal      | Executive             | 1.0 if the percept's space or entities touch the current task; 0.6 if they touch another open task; 0.3 if they touch a standing goal; else 0 |
+| actor     | People models         | The actor's proximity (Chapter 6): owner 1.0, teammate ~0.7, known contact ~0.4, stranger 0.2, none 0.3 |
+| urgency   | Features              | From the nearest deadline among `changes`: 1.0 under 15 minutes, 0.7 today, 0.4 this week, 0.1 later; explicit "urgent" words add at most 0.2 |
+| arousal   | Appraisal (Chapter 6) | 0 to 1                                                                               |
+| self      | Features              | 1.0 if addressed directly (To:, @mention, DM), 0.5 if copied, 0 otherwise           |
+
+The weights `w` are part of the identity (Chapter 6). A support agent runs with a high `actor` weight and a low `goal`
+weight: people first. A research agent runs the other way round. The defaults sum to 1 so salience stays between 0 and 1.
+
+Nia's tick from 1.5, with default weights (N .25, G .25, A .15, U .15, V .1, S .1):
+
+```text
+                     novelty  goal  actor  urgency  arousal  self   salience
+Notion edit           1.0     1.0   0.7    0.0      0.5      0.0    0.68
+Invoice mail          0.1     0.3   0.4    0.4      0.3      0.5    0.28
+Standup reminder      0.1     0.0   0.3    1.0      0.1      0.0    0.23
+Newsletter (seen 40×) 0.21    0.0   0.2    0.0      0.0      0.0    0.08
+```
+
+### 3.2 Gates
+
+Two thresholds, and one comparison against the current task.
+
+- **Attend** (default 0.15): at or above, the percept enters working memory. Below, it is written to episodic memory
+  as an unattended percept and nothing else happens now. The newsletter stops here.
+- **Interrupt**: the percept wins the tick, and the current task is suspended, when
+  `salience > engagement + switchCost`. Engagement is the current task's priority (Chapter 7) scaled by how deep the
+  agent is in it (a task at step 5 of 6 is harder to interrupt than one just started). `switchCost` defaults to 0.1
+  and is the price of losing flow. The Notion edit (0.68) beats Nia's plan-drafting engagement (0.45 + 0.1).
+- **Queue**: attended but not interrupting. The percept sits in working memory and becomes a candidate task at the
+  next selection. The invoice and the standup do this.
+
+Nothing below the attend gate is lost. Unattended percepts are still perceived, still counted for habituation, and
+still reviewed in bulk during idle mode (Chapter 6) the way a person skims the inbox when there is nothing better to do.
+
+### 3.3 Inhibition of return
+
+Once a percept has been handled (a task consumed it, or the executive chose to ignore it), the same thread or entity
+does not win attention again unless something new happens to it. Perception's `changes` list is what "new" means. This
+is what stops Nia re-reading the same thread every tick.
+
+### 3.4 Working memory
+
+Working memory is a fixed set of slots with fixed capacities. Its rendering is the prompt for the slow path; there is
+no other prompt. What is not in working memory does not exist for the LLM on that tick.
+
+```typescript
+type WorkingMemory = {
+  self: IdentitySummary          // fixed, ~200 tokens. Who am I, whose agent, what I may do alone
+  now: {
+    time: Date
+    space: SpaceRef              // where attention currently is
+    drives: DriveSnapshot        // boredom, budget, curiosity, social, as levels
+    goal: GoalRef | null         // the standing goal being served
+    task: TaskFrame | null       // the current task: steps, current step, short history
+  }
+  attention: Percept[]           // max 4, ordered by salience
+  recall: Recalled[]             // max 7: episodes, facts, people, procedures; each with id and activation
+  expectations: Expectation[]    // max 5, the open ones tied to the task
+  scratch: string                // the agent's own last reasoning summary for this task, max ~300 tokens
+  conflicts: Conflict[]          // recalled facts that contradict attended percepts (3.6)
+}
+```
+
+Budget: about 3,000 to 4,000 tokens rendered. That is a design constraint, not a tuning value. If a task needs more,
+the task is too big and should be split (Chapter 7), or the content should be recalled on demand instead of carried.
+
+### 3.5 Eviction and chunking
+
+Every item in working memory has an activation: recency, times touched, and relevance to the current task. When a slot
+is full, the lowest activation leaves. Eviction is free because episodic memory already has everything; only the
+convenience of having it in front of the agent is lost. Recall (Chapter 4) can bring it back.
+
+Long task histories are chunked. When `task.history` grows past its budget, the oldest steps are collapsed into one
+line ("steps 1 to 3: read the thread, found two open questions, drafted answers") by a cheap model call, and the detail
+stays in the episode. This is rehearsal: the story gets shorter and the agent keeps the point.
+
+### 3.6 Focus and the frame stack
+
+`context:focus` from the brainstorm is the executive setting `now.task`. Everything top-down (goal relevance, recall,
+expectations) is computed relative to the focus, while `self` and the standing goals stay in place. The bigger picture
+is never dropped; it is just not in the foreground.
+
+When a percept interrupts, the current `TaskFrame` (its step, history, scratch and recalled items) is pushed onto a
+stack and the new task takes the foreground. When the new task ends, the frame is popped and restored, and the agent
+resumes where it was. The stack has a depth of three. A fourth interrupt does not push; it is queued instead. Deeper
+than that, people lose the thread too.
+
+Frames on the stack are the brainstorm's ephemeral and nested contexts: the plan Nia was drafting, inside which the
+merge she is now doing, inside which a question she may ask the teammate.
+
+### 3.7 Reconciliation
+
+A recalled fact and an attended percept can disagree: memory says the standup is at 10:00, the calendar says 09:30
+today. Attention does not pick a side. It records a `Conflict` in working memory, and the executive must resolve it
+before acting on either: update the fact with the new evidence, distrust the percept, or ask. Conflicts are surprising
+by definition, so they also feed learning (Chapter 9). An agent that acts on two contradicting beliefs at once is the
+software version of confusion, and this slot is what prevents it.
+
+### 3.8 Rendering
+
+Working memory renders to text in a fixed order (self, now, conflicts, attention, recall, expectations, scratch), each
+item prefixed with its id (`P-1042`, `E-207`, `F-77`). The LLM is asked to cite those ids when it uses them. The
+debugger shows the rendering verbatim next to the model's answer. If the agent says something that cites no id, that
+is a claim from the model's own weights, and Chapter 10 says what happens to it.
