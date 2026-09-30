@@ -119,15 +119,17 @@ every tick (seconds while active, minutes while idle):
   2. Perceive   normalise each stimulus into a percept: entities, changes, actor, time
   3. Predict    match percepts against open expectations; mark met / missed / surprising
   4. Appraise   tag valence and arousal
-  5. Attend     score salience; gate into working memory; decide whether it may interrupt; when is the schedule's call (7.2)
-  6. Recall     pull related episodes, facts, procedures and people into working memory
-  7. Select     fast path: a procedure matches with confidence → run it
+  5. Prime      run a cheap associative lookup on every percept, attended or not; warm what it
+                touches, and let a strong enough hit become a `reminded` stimulus (4.10)
+  6. Attend     score salience; gate into working memory; decide whether it may interrupt; when is the schedule's call (7.2)
+  7. Recall     pull related episodes, facts, procedures and people into working memory
+  8. Select     fast path: a procedure matches with confidence → run it
                 slow path: start a deliberation with the LLM over working memory; it runs beside the
                           tick with a time budget, and a later tick collects it (8.5)
                 no path: wait, or ask the owner
-  8. Act        run one atomic operation; store the expected outcome
-  9. Observe    compare outcome to expectation; write the episode; update procedure stats
- 10. Regulate   update drives; evict from working memory; schedule the next tick
+  9. Act        run one atomic operation; store the expected outcome
+ 10. Observe    compare outcome to expectation; write the episode; update procedure stats
+ 11. Regulate   update drives; evict from working memory; schedule the next tick
 ```
 
 Sleep is not a step in the tick. It is a separate job that runs when the agent has been idle long enough or on a
@@ -137,7 +139,7 @@ Two things make this loop different from a chat loop:
 
 - **Interrupts are decided, not automatic.** A new stimulus does not stop the current task. It gets a salience score,
   and only wins if it beats what the agent is doing (Chapter 3).
-- **The LLM is optional per tick.** Steps 1 to 6 and 8 to 10 are code. Step 7 only calls the model when no procedure
+- **The LLM is optional per tick.** Steps 1 to 7 and 9 to 11 are code. Step 8 only calls the model when no procedure
   fits. A quiet day for Nia is thousands of ticks and a handful of model calls.
 
 ### 1.5 What one tick looks like for Nia
@@ -151,15 +153,17 @@ Two things make this loop different from a chat loop:
    she is working on). The invoice mail was expected "this week" (met, early).
 4. **Appraise:** invoice mail: mild negative valence (money owed), low arousal. Notion edit: neutral, medium arousal
    (conflict risk).
-5. **Attend:** Notion edit scores highest (surprise + touches the active task) and interrupts. Invoice mail enters
+5. **Prime:** the supplier's name warms the July episode where an Acme amount was wrong (E-1044); it does not pop, it
+   just sits in the primed set for the next few minutes. Nothing else lights up.
+6. **Attend:** Notion edit scores highest (surprise + touches the active task) and interrupts. Invoice mail enters
    working memory but does not interrupt. Newsletter scores below threshold: logged to episodic memory, not attended.
    Standup: queued as a task with a deadline.
-6. **Recall:** the teammate's people model (she often edits plans directly), the page's recent history, the procedure
+7. **Recall:** the teammate's people model (she often edits plans directly), the page's recent history, the procedure
    "merge concurrent edits".
-7. **Select:** the procedure matches with confidence 0.85: fast path. No model call.
-8. **Act:** re-read the page, merge, continue the draft. Expected outcome: no conflict on save.
-9. **Observe:** save succeeded. Episode written. Procedure stats: one more success.
-10. **Regulate:** boredom 0, budget fine, next tick in 5 seconds.
+8. **Select:** the procedure matches with confidence 0.85: fast path. No model call.
+9. **Act:** re-read the page, merge, continue the draft. Expected outcome: no conflict on save.
+10. **Observe:** save succeeded. Episode written. Procedure stats: one more success.
+11. **Regulate:** boredom 0, budget fine, next tick in 5 seconds.
 
 The invoice is still in working memory. When the plan is done, the executive picks the next task, and the invoice
 procedure ("forward supplier invoices to Kam with a one-line summary") is the likely winner.
@@ -247,6 +251,7 @@ with `internal: true` and a provenance no tool can forge:
 | `outcome` | Result of the agent's own operation         | The runner (8.1)                                    |
 | `drive`   | A drive crossed its set-point               | The regulator (Chapter 6)                           |
 | `thought` | A question or hypothesis the agent produced | The executive, from a deliberation's unknowns (7.5) |
+| `reminded` | A memory that popped on its own from a percept | The Prime step (4.10) |
 
 They go through the same door as notifications so that attention can weigh a boredom signal against an email. They are
 not installable, an external tool cannot emit them, and the trace always shows which side of the boundary a stimulus came
@@ -620,6 +625,7 @@ type WorkingMemory = {
     expectations: Expectation[] // max 5, the open ones tied to the focus
     scratch: string // the agent's own last reasoning summary for the focus, max ~300 tokens
     conflicts: Conflict[] // recalled facts that contradict attended percepts (3.7)
+    primed: Primed[] // shadow, not rendered: what recent percepts warmed, max 20, ten-minute half-life (4.10)
 }
 ```
 
@@ -812,7 +818,7 @@ episode, gets promoted; the rest are gone in thirty days.
 ### 4.3 Procedural memory: how to do things
 
 A procedure is a trigger, preconditions, steps, and an expected outcome, plus its track record. Procedures are what make
-the fast path in the tick (1.4 step 7) possible. They come from two places: the owner writes them (a playbook), or sleep
+the fast path in the tick (1.4 step 8) possible. They come from two places: the owner writes them (a playbook), or sleep
 compiles them from repeated successful episodes (Chapter 5).
 
 ```typescript
@@ -892,7 +898,7 @@ recalled often should stay easy to find and easy to correct, not become truer.
 
 ### 4.6 Recall
 
-Recall is step 6 of the tick. Its cue is the content of working memory: the attended percepts' entities, threads and
+Recall is step 7 of the tick. Its cue is the content of working memory: the attended percepts' entities, threads and
 spaces, the current task's goal, and the text of the percept if any. It runs in three passes, all deterministic:
 
 1. **Index lookup.** Episodes, facts and procedures that reference the cued entities, threads or spaces directly. This
@@ -943,6 +949,71 @@ pass 3   E-1044 episode July: an Acme invoice had a wrong amount, Kam asked to c
 
 Seven candidates, six make it. The July episode is the interesting one: without the arousal bonus it would have faded,
 and Nia would not think to check the amount before forwarding.
+
+### 4.10 Priming, reminding, incubation
+
+Recall (4.6) runs on what won attention. The brain runs it the other way round. Pattern completion in the hippocampus
+is automatic: it fires on every cue, attended or not, and that is why involuntary memories exist at all. The madeleine,
+the song that brings back a summer, the flower that reminds you of someone. Attention decides what you think about; it
+does not decide what comes to mind. Three mechanisms follow, in increasing cost.
+
+**Priming.** Step 5 of the tick (1.4), on every percept with recognised entities or a place, before attention. A cheap
+lookup: recall's pass 1 (direct index hits) and one bounded hop of spreading, no text search, the top five by
+activation. Each hit gets a **priming bump**, a fraction of a real access that decays over minutes, and lands in the
+**primed set**, a shadow beside working memory:
+
+```typescript
+type Primed = {
+  item: EpisodeRef | FactRef | ProcedureRef | EntityRef
+  via: PerceptRef                   // what warmed it
+  at: Date
+  strength: number                  // 0 to 1, from the hit's activation and the link's strength
+}
+// capacity 20, evict the weakest; effective activation for recall = A + 0.5 · strength · e^(−minutes / 10)
+```
+
+The primed set is never rendered on its own. Two things read it. Recall (4.6) uses the effective activation, so a
+deliberation on a related task finds those items already warm: this is how "later that day it clicked" happens. And
+at deliberation time, up to two primed items that share an entity or place with the focus join the `recall` slot at
+the end, tagged *came to mind*, so the model sees them without them having won anything. One indexed query per
+percept; glances that find nothing produce no percept, so the volume stays small.
+
+**Reminding.** A primed item **pops** when its effective activation crosses `τ_pop` (default: the retrieval threshold
+plus 2.0), it is not already in working memory, and either its arousal is at least 0.5 or it touches something live
+(an open expectation, an open task, a standing goal, a drive out of band). The regulator then emits a stimulus from
+the `reminded` producer (2.1): the percept, the memory, and the path between them. It goes through the pipeline like
+anything else, with its own salience: novelty 1.0 (nobody predicted it), arousal from the memory, goal term from what
+it touches, urgency from any expectation it touches, actor self at 0.3. So a reminding rarely interrupts. Usually it
+queues, and curiosity picks it up in idle mode: "the flower reminded me of Kam's mother's birthday, is anything
+planned?" When it does touch something urgent (Acme's name in a peripheral glance reminds her of the July invoice,
+and the payment is due tomorrow) it wins attention on its own merits, through the same gate as everything else. A
+percept-memory pair reminds at most once a day (its signature habituates like any other, 2.6), so the same flower
+does not nag.
+
+**Incubation.** Creativity is remote association: two things never connected coming together. Idle mode (6.4 §6) and
+the dream phase (5.2 §7) run it, on a budget:
+
+1. Pick a **problem**. Open: a blocked task, a why-queue entry, an unresolved anomaly. Closed: a decision from the
+   last seven days whose confidence was under 0.8, or whose outcome was negative. At most three problems per idle
+   session; a problem is not revisited within 24 hours.
+2. Gather **candidates**: the primed set, plus the top recall for the problem.
+3. One cheap `connect` call (8.5): given the problem and the candidates by id, return connections, each with a
+   strength from 0 to 1 and the ids it rests on.
+4. **Accept** a connection only if its strength is at least `θ_connect` and it cites at least two ids. Anything less
+   is discarded and never stored.
+5. An accepted connection becomes a `thought` stimulus (2.1): a hypothesis, marked inferred, never a fact. For an open
+   problem the executive may act on it like any thought. For a closed problem the thought may only add a line to the
+   why queue or a proposal to the brief; it never reopens a task by itself. That is the difference between hindsight
+   and second-guessing, and it is what keeps a closed problem from eating the budget.
+
+`θ_connect` starts at 0.8 and **adapts**: a connection that led to nothing (the thought was dropped, the proposal
+ignored) raises it by 0.02; one that led to a task done or a fact confirmed lowers it by 0.05; bounded between 0.6
+and 0.95. The agent that keeps producing bad ideas gets pickier on its own. The whole thing is bounded by the
+identity's incubation budget (6.6), default two cents a day, and it is the one place the agent gets to be surprised
+by itself.
+
+**In the trace.** Every tick records what it primed and any reminding, popped or not (10.1), so "why did that come to
+mind" has an answer, which is the debuggability goal applied to spontaneous thought.
 
 ---
 
@@ -1029,7 +1100,9 @@ Deleted items go to cold storage for a further ninety days, then are gone. Habit
 **7. Dream** (later milestone). Take tomorrow's calendar, the expectations due, and the recurring patterns for that
 weekday, and run them through the fast path as imagined stimuli. Where no procedure fits and the stakes are high,
 prepare: pre-read the thread, pre-draft the reply, or add a question to the brief. Bounded by a small budget. This is
-the brainstorm's dream: a rehearsal of the next day, about what is dreaded or hoped for.
+the brainstorm's dream: a rehearsal of the next day, about what is dreaded or hoped for. Dreaming also incubates
+(4.10): the day's primed set against the open problems and the closed decisions of the week, under the same budget
+and thresholds as idle mode, with the accepted connections waiting as thoughts on waking.
 
 **8. Brief.** Sleep ends by writing a short morning brief for the owner: what was learned, what is expected today, the
 why queue. Whether it is sent, and where, is in the identity.
@@ -1079,7 +1152,7 @@ Without drives an agent is a function: it runs when called. With them it is an a
 
 ### 6.1 Drives
 
-A drive is a level, a set-point, and a band. The regulator (tick step 10) updates the levels. When a level leaves its
+A drive is a level, a set-point, and a band. The regulator (tick step 11) updates the levels. When a level leaves its
 band, the regulator emits a `drive` stimulus, and from there it is treated like any other percept: appraised, scored,
 attended, turned into a task. That keeps one pipeline for everything, and puts internal needs in the same competition as
 external ones.
@@ -1173,6 +1246,8 @@ above the attend gate takes over. Ordered by what it tries first:
 4. **Interests.** What the identity says this agent reads when free (the security agent and its blogs). New knowledge
    goes to semantic memory with the source as evidence.
 5. **Tidy.** Draft the brief early. Propose compiled procedures to the owner. Retry a numb sense.
+6. **Incubate.** Take one open problem or one recent decision and the primed set, and ask whether they connect
+   (4.10). A few cents a day of daydreaming, and the one place the agent gets to surprise itself.
 
 Each idle session has a budget (identity, default a few cents), and idle work never sends anything outward without the
 permission level for it. Boredom resets when the session ends, and the next one is not before the drive's band allows.
@@ -1226,7 +1301,7 @@ type Identity = {
     interests: string[] // sources for idle mode
     installs: { byAgent: boolean; budget: Money } // may the agent install tools itself, and how much may it spend
     models: Record<'perceive' | 'deliberate' | 'consolidate', ModelTier>
-    budget: { daily: Money; idle: Money; experiments: Money }
+    budget: { daily: Money; idle: Money; experiments: Money; incubation: Money }
 }
 ```
 
@@ -1540,7 +1615,7 @@ says what its outcome is and when it can be known (8.1): "send accepted" is imme
 
 ### 7.7 Monitoring
 
-After every action (tick step 9), the outcome is compared with `expected`:
+After every action (tick step 10), the outcome is compared with `expected`:
 
 - **Match:** continue. The procedure gains a success.
 - **Mismatch:** arousal up, the step is re-deliberated with the mismatch in scratch. The procedure gains a failure, and
@@ -1732,11 +1807,12 @@ the working-memory rendering as the only variable part:
 | write an outbound message | mid        | `compose`    | text plus the ids it drew on         |
 | check a draft             | cheap      | `check`      | list of unsupported claims           |
 | conclude a stopped call   | cheap      | `conclude`   | `Deliberation` from a partial stream |
+| find a connection (4.10)  | cheap      | `connect`    | connections with strength and cited ids |
 | extract facts (sleep)     | mid        | `extract`    | facts, confirmations, contradictions |
 | chunk a history           | cheap      | `chunk`      | one line                             |
 | narrate the trace (10.1)  | cheap      | `explain`    | prose citing tick ids                |
 
-Eight prompts, versioned, with the version stored in every trace. Nothing else calls the model. Salience, recall,
+Nine prompts, versioned, with the version stored in every trace. Nothing else calls the model. Salience, recall,
 priority, procedures, memory writes, the trace: all code. On a quiet day Nia makes a few dozen calls, most of them on
 the cheapest tier, and the debugger can show every one next to the working memory it saw.
 
@@ -1763,7 +1839,7 @@ after (7.7).
   near its daily limit thinks shorter, the way a tired person decides faster and asks more.
 - **The trace records** started, budget, tier and effort, stopped at, why, and what was kept.
 
-`conclude`, the eighth prompt in the table above, takes the partial stream plus the question and returns the same
+`conclude`, in the table above, takes the partial stream plus the question and returns the same
 `Deliberation` shape with `confidence` capped at 0.6.
 
 ### 8.6 Grounding rules in every prompt
@@ -2024,6 +2100,10 @@ These facts are what the forward model (7.6) draws its expected outcomes from, a
 compile into guarded procedures (4.3). Nothing learned this way earns a permission: exploration teaches what an
 operation does, and the matrix still says whether the agent may do it.
 
+Incubation (4.10) is the third form of curiosity: not reading and not doing, but connecting. What it learns is a
+hypothesis, and a hypothesis becomes a fact only through evidence like any other; what it *tunes* is its own
+threshold, so that an agent whose connections keep going nowhere makes fewer of them.
+
 ### 9.7 People
 
 Every interaction updates the people model of the person involved (6.5): proximity from the episode's valence and
@@ -2078,6 +2158,8 @@ type Tick = {
     drives: DriveSnapshot
     modulation: { thoroughness: number; explore: number; patience: number }
     cost: { calls: number; tokens: number; money: Money }
+    primed: { id: string; via: string; strength: number }[]   // what this tick warmed (4.10)
+    remindings: { memory: string; percept: string; popped: boolean }[]
     promptVersions: Record<string, string>
 }
 ```
@@ -2258,6 +2340,8 @@ arithmetic (4.5, 5.4), the reward scales (9.4), the runner's duties (8.1), and f
 
 ### 11.5 Still open
 
+- **Pop and connection thresholds** (4.10): `τ_pop` and `θ_connect` start as guesses; `θ_connect` adapts, and `τ_pop`
+  should probably adapt the same way once the harness shows how often remindings are useful.
 - **Depth defaults** (3.6): four deliberate levels and one live interrupt are guesses until the harness measures
   resumption errors and reconstruction cost.
 - **The weights in `r`** (3.2) and the **optimism factors** (7.7): both are learned or calibrated in the harness, and
@@ -2355,6 +2439,22 @@ not proposed again in good faith; any of them can be reopened with a new argumen
 | Model calls as blocking steps inside the tick                         | They run beside it with a time budget, so they can be assessed and stopped in flight                        | 8.5       |
 | Installs as part of the identity                                      | The identity is values and boundaries, owner-only; installs are capability records in runtime config      | 6.6, 8.4  |
 | OAuth connection gives every team agent the account                   | Connect, grant, install, use are four steps that must all agree at execution                              | 8.4       |
+
+### 11.10 Decisions from the fifth round: what comes to mind
+
+The author asked whether a stimulus that never wins attention should still be able to bring a memory forward, and
+whether that could feed curiosity and creativity. Settled:
+
+1. **Recall runs before attention, cheaply, on everything.** A Prime step in the tick (1.4 step 5) warms what each
+   percept touches into a primed set beside working memory; recall finds those items warm, and a deliberation sees
+   up to two of them as "came to mind" (4.10).
+2. **A strong enough hit is a stimulus.** A `reminded` producer (2.1) turns a popped memory into a percept that goes
+   through the normal gate, so it can interrupt when it deserves to (the unpaid invoice) and otherwise queues for
+   curiosity (4.10).
+3. **Incubation runs on open and closed problems**, in idle mode and in dreams, under a budget and an adaptive
+   acceptance threshold; a connection must cite two items to be kept; closed problems can only produce a why-queue
+   line or a brief proposal, never reopen a task (4.10, 5.2 §7, 6.4 §6).
+4. A ninth prompt, `connect` (8.5), and two trace fields, `primed` and `remindings` (10.1).
 
 ---
 
