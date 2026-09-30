@@ -722,3 +722,161 @@ These are defaults in the identity, not constants in code. A compliance agent fo
 Extract is the expensive phase: one mid-tier call per task group, so a busy day for Nia is twenty to forty calls. Compile,
 prospect, compact and prune are code. Dream is capped. Sleep's spend counts against the daily budget (Chapter 6), which
 is one more reason it runs at night when the budget has reset and nothing else is competing for it.
+
+---
+
+## 6. Drives, appraisal and identity
+
+Nothing in the brain acts without a reason to. The hypothalamus keeps a few quantities near their set-points (energy,
+temperature, water) and turns any deviation into a drive that steers behaviour until it is corrected. Higher drives
+(curiosity, boredom, company) work the same way. The amygdala reads each stimulus for what it means to those drives
+and tags it, and the tag changes what gets attention and what gets remembered. On top sits a stable sense of self:
+who I am, what I value, what I do when nothing is asked of me.
+
+Without drives an agent is a function: it runs when called. With them it is an agent.
+
+### 6.1 Drives
+
+A drive is a level, a set-point, and a band. The regulator (tick step 10) updates the levels. When a level leaves its
+band, the regulator emits a `drive` stimulus, and from there it is treated like any other percept: appraised, scored,
+attended, turned into a task. That keeps one pipeline for everything, and puts internal needs in the same competition
+as external ones.
+
+| Drive          | Rises with                                                   | Falls with                          | Out of band →                                                                 |
+| :------------- | :----------------------------------------------------------- | :---------------------------------- | :---------------------------------------------------------------------------- |
+| boredom        | minutes with no attended percept and no active task          | any attended activity               | idle mode (6.4)                                                               |
+| budget         | tokens, dollars and API calls spent in the current window    | window reset (daily)                | soft (80%): prefer the fast path, defer non-urgent deliberation, answer shorter. Hard (100%): only urgent work and owner requests; tell the owner |
+| curiosity      | unresolved novelty: surprising percepts left unattended, candidate entities in attended episodes, open conflicts | a fact learned, a why answered      | idle mode picks the top unresolved item and reads or asks                    |
+| social         | time since the last exchange with the owner; unanswered owner messages | contact                             | send the brief or a short check-in, within the owner's stated cadence          |
+| sleep pressure | hours since sleep, weighted by new episodes                  | sleep                               | opportunistic sleep, then forced sleep at 36 hours (5.1)                      |
+| confidence     | outcomes matching expectations                               | mismatches, failures, owner corrections | low: ask more, act alone less; the permission matrix (Chapter 8) reads it   |
+
+Set-points and bands live in the identity. A budget drive is what stops Nia from thinking her way through a quiet
+Sunday at full price; a boredom drive is what makes her useful on that same Sunday.
+
+### 6.2 Global modulation
+
+The brain also has a few slow, global signals (noradrenaline, dopamine, serotonin) that tune every region at once
+rather than carrying a message. We keep three knobs, set by the regulator from the drives and the last few ticks:
+
+- **thoroughness** (noradrenaline): rises with arousal and stakes. Higher means a stronger model tier, more recall,
+  more verification before acting. Falls when budget is high.
+- **explore** (dopamine, novelty): rises with boredom and curiosity, falls with budget. Higher means idle mode reads
+  further afield and the slow path considers more options.
+- **patience** (serotonin): rises with confidence, falls with urgency. Higher means longer waits before nudging, fewer
+  interrupts accepted (a higher `switchCost`).
+
+They are three floats in `now.drives`, visible in the trace, so "why was she so cautious this morning" has an answer.
+
+### 6.3 Appraisal
+
+Step 4 of the tick. Every percept gets a **valence** (−1 to 1, does this help or hurt) and an **arousal** (0 to 1,
+how much does it matter right now). They are computed from a few appraisal dimensions, by rules where possible and by
+the same cheap model call as interpretation (2.3 §5) when text is involved:
+
+| Dimension        | Question                                             | Feeds                                     |
+| :--------------- | :--------------------------------------------------- | :---------------------------------------- |
+| goal congruence  | does it advance or block an active goal, or the owner | valence                                   |
+| agency           | who caused it: self, owner, other, the world         | arousal (own mistakes score high)         |
+| magnitude        | money, people, deadline size, irreversibility        | arousal                                   |
+| certainty        | how sure is the interpretation                       | arousal (uncertain and important is high) |
+| novelty          | from the Predict step                                | arousal                                   |
+
+What the tags do:
+
+- **Attention:** arousal is a salience term (3.1).
+- **Memory:** arousal adds to activation at encoding (4.5), so what mattered is what lasts.
+- **Care:** a percept with negative valence and high arousal switches the executive into care mode for the task it
+  spawns: the slow path even if a procedure matches, a stronger model, verification before any outbound action, and a
+  lower bar for asking the owner. This is the freeze before the fight or flight, and it is where "does not
+  hallucinate" is mostly won: the agent slows down exactly when a confident wrong answer would cost the most.
+
+What the tags do not do: show. Nia does not say she is worried. The brainstorm's non-goal stands, with the split the
+open question asked for: emotion is **understood and used**, never **performed**.
+
+Reading other people's emotion is a different thing and is required. Interpretation extracts the sender's tone
+(frustrated, pleased, neutral) as a short-lived fact on their people model (`state`, expiring in a day). Wording and
+timing toward them use it. Nia answers a frustrated teammate differently from a cheerful one, and that is theory of
+mind, not feeling.
+
+### 6.4 Idle mode
+
+The default mode network is what the brain does when nothing is demanded: it reviews the day, imagines the next one,
+wanders toward whatever is unresolved. It is where a lot of planning and insight happens. Idle mode is the same, and
+it is what the brainstorm's heartbeat and boredom describe.
+
+Entered when there is no active task and boredom is out of band. Runs as tasks with low priority, so any real percept
+above the attend gate takes over. Ordered by what it tries first:
+
+1. **Skim the unattended.** The thin episodes since the last idle session, in one pass, cheap. Anything that looks
+   different in bulk (five mails from one stranger, a thread that grew fast) becomes a normal percept and re-enters
+   attention.
+2. **Look ahead.** Expectations due soon, the calendar for the next day. Nudge, prepare, or queue.
+3. **Follow curiosity.** The top unresolved item: a candidate entity that keeps appearing, an open conflict, a
+   surprising outcome. One focused read or one question.
+4. **Interests.** What the identity says this agent reads when free (the security agent and its blogs). New knowledge
+   goes to semantic memory with the source as evidence.
+5. **Tidy.** Draft the brief early. Propose compiled procedures to the owner. Retry a numb sense.
+
+Each idle session has a budget (identity, default a few cents), and idle work never sends anything outward without the
+permission level for it. Boredom resets when the session ends, and the next one is not before the drive's band allows.
+
+### 6.5 People models
+
+A people model is an entity of kind `person` with reserved attributes. It is the agent's theory of mind about one
+person, and it is what makes the difference between an assistant and a broadcast.
+
+| Attribute       | What it holds                                                               | Used by                                   |
+| :-------------- | :-------------------------------------------------------------------------- | :---------------------------------------- |
+| proximity       | 0 to 1, from interactions (below)                                           | actor weight in salience; whom to trust   |
+| role            | owner, teammate, contact, stranger; team role if any                        | permissions, tone                         |
+| responseTime    | typical time to reply, per channel                                          | expectation deadlines, patience           |
+| hours           | timezone, working hours                                                     | when to send, when to expect              |
+| knows           | facts this person was told or authored                                      | not re-explaining; not leaking            |
+| prefers         | tone, channel, format, cadence of contact                                   | wording, when to check in                 |
+| state           | last observed tone, expires in a day                                        | wording                                   |
+
+Proximity is the brainstorm's formula, made computable:
+
+```text
+proximity = clamp( Σ over interactions of  quality · recency · weight ,  0, 1 )
+   quality  = (valence + 1) / 2          from the episode
+   recency  = 2^(−daysAgo / 30)
+   weight   = 1 for a two-way exchange, 0.3 for one-way, 2 for a correction or a thanks
+```
+
+The owner is pinned at 1. Teammates start at 0.5 from the roster. Everyone else earns it.
+
+### 6.6 Identity
+
+The identity is the part of the agent the owner writes. It is the `self` slot of working memory, the source of the
+weights and thresholds in every chapter, and the only place personality lives.
+
+```typescript
+type Identity = {
+  name: string
+  role: string                        // one line: "operations agent for the founders team"
+  owner: EntityRef
+  team: TeamRef
+  rules: string[]                     // pinned facts, p = 1: today's systemInstructions
+  voice: string                       // how to write: short, warm, formal…
+  autonomy: PermissionMatrix          // per action class: do / do and report / ask first (Chapter 8)
+  vigilance: SalienceWeights          // wN, wG, wA, wU, wV, wS
+  thresholds: { attend: number; interrupt: number; switchCost: number }
+  drives: Record<DriveKind, { setPoint: number; band: number }>
+  forgetting: { retrieval: number; forget: number; compactAfterDays: number }
+  night: { at: string; timezone: string }
+  brief: { channel: ChannelRef; when: 'morning' | 'never' }
+  interests: string[]                 // sources for idle mode
+  models: Record<'perceive' | 'deliberate' | 'consolidate', ModelTier>
+  budget: { daily: Money; idle: Money }
+}
+```
+
+Two rules about identity:
+
+- **The owner edits it; the agent does not.** Sleep can propose (a procedure, a set-point change after a month of
+  data), but every change to identity is the owner's act, and it is versioned. An agent that rewrites its own values is
+  the one failure mode we do not want to debug.
+- **It is short.** The `self` rendering is about 200 tokens. Everything longer belongs in semantic memory as facts,
+  where it can be recalled when relevant instead of carried on every tick.
