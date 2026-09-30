@@ -623,3 +623,102 @@ pass 3   E-1044 episode July: an Acme invoice had a wrong amount, Kam asked to c
 
 Seven candidates, six make it. The July episode is the interesting one: without the arousal bonus it would have faded,
 and Nia would not think to check the amount before forwarding.
+
+---
+
+## 5. Consolidation (sleep) and forgetting
+
+The brain does its filing at night. During slow-wave sleep the hippocampus replays the day's episodes to the cortex,
+which slowly extracts what generalises. Weak connections are scaled down and lost. Emotional episodes are processed and
+their sting reduced. Waking up, you know a little more and remember a little less, and both are improvements.
+
+Nia sleeps too. Sleep is a job, not a tick. It is the only process that writes to semantic and procedural memory in
+bulk, and the only one that deletes.
+
+### 5.1 When
+
+- **Scheduled:** once a day, at the identity's night (default 03:00 in the owner's timezone).
+- **Opportunistic:** after 30 minutes idle with at least 20 new episodes since the last sleep.
+- **Forced:** if 36 hours pass without sleep, the regulator (Chapter 6) raises sleep above every non-urgent task, and
+  the agent declines new low-priority work until it has slept. Sleep debt is real, and it is cheaper than the memory
+  bloat it prevents.
+
+Sleep runs in phases with a checkpoint after each. A stimulus above the interrupt gate wakes the agent at the next
+checkpoint; the remaining phases run at the next opportunity. Nothing in sleep is required to finish tonight.
+
+### 5.2 Phases
+
+**1. Replay.** Read the episodes since the last sleep, grouped by task, thread and day. Code only.
+
+**2. Extract** (episodic → semantic). For each group: one model call, mid-tier, given the episodes' summaries and the
+facts already known about the entities involved. It returns new facts, confirmations and contradictions, each pointing
+at the episodes that support it. Code applies them:
+
+- Confirmation: `lastConfirmed` moves, confidence rises, the episode joins the sources.
+- New fact: created with confidence from the number of supporting episodes.
+- Contradiction: the distribution is updated, `lastContradicted` set; if the two values are close in `p`, the fact
+  goes on the morning brief as a question.
+- Candidate entities seen twice, or in an attended episode, are promoted. Others age toward deletion.
+
+**3. Compile** (episodic → procedural). Look for recurring shapes: the same trigger (percept pattern and goal), the
+same sequence of atomic operations, and a matched outcome, three or more times without a failure. Each becomes a
+procedure proposal with `origin.kind = 'compiled'`. Procedures whose failures have caught up with their successes drop
+below the fast-path threshold and are flagged. This is how Nia's ninth forwarded invoice stops costing a model call.
+
+**4. Prospect.** Open loops become expectations: asks with dates and no outcome, sent messages with no reply, promises
+people made ("I'll send the contract Thursday"). Reply deadlines use the person's typical response time from their
+people model. Surprising outcomes, unresolved conflicts and low-confidence decisions that turned out to matter go to
+the **why queue**: questions for the owner, batched into the morning brief instead of pinging through the day.
+
+**5. Compact.** Episodes older than seven days with activation below the compaction threshold are grouped by task or
+thread and day, summarised into one **block** episode, and marked `block = <id>`. Their detail leaves the hot store
+(raw payloads go cold, summaries survive inside the block). Facts whose sources were compacted are re-pointed at the
+block, so a fact does not lose its evidence just because the evidence was summarised. This is the brainstorm's memory
+compacting; the one change is that facts survive compaction as long as the block does.
+
+**6. Prune.** The actual forgetting:
+
+- Thin episodes (unattended percepts) older than 48 hours, unless referenced.
+- Episodes and blocks whose activation is below the forgetting threshold and that no procedure, fact or standing goal
+  references.
+- Facts with no sources left, low confidence, and no confirmation in ninety days.
+- Candidate entities not promoted within thirty days.
+- Never: anything pinned, anything the owner authored, the last thirty days of episodes involving the owner.
+
+Deleted items go to cold storage for a further ninety days, then are gone. Habituation counts are kept.
+
+**7. Dream** (later milestone). Take tomorrow's calendar, the expectations due, and the recurring patterns for that
+weekday, and run them through the fast path as imagined stimuli. Where no procedure fits and the stakes are high,
+prepare: pre-read the thread, pre-draft the reply, or add a question to the brief. Bounded by a small budget. This is
+the brainstorm's dream: a rehearsal of the next day, about what is dreaded or hoped for.
+
+**8. Brief.** Sleep ends by writing a short morning brief for the owner: what was learned, what is expected today, the
+why queue. Whether it is sent, and where, is in the identity.
+
+### 5.3 Waking
+
+Working memory is cleared except `self`, the standing goals and the drives. The frame stack is emptied: unfinished
+tasks are re-queued with their scratch saved in their episodes, so the first ticks of the day pick them up fresh
+rather than resume mid-thought. `lastSleepAt` is set. The first tick after sleep perceives the sensory buffer that
+accumulated overnight, and salience uses each stimulus's `at`, so an email from 02:00 is not treated as breaking news.
+
+### 5.4 The numbers
+
+With `d = 0.5`, a retrieval threshold of −1.5 and a forgetting threshold of −3, roughly:
+
+| Item                                                        | Recallable for | Forgotten after |
+| :---------------------------------------------------------- | :------------- | :-------------- |
+| Newsletter, perceived once, unattended                      | never          | 2 days (thin)   |
+| A routine task episode, never recalled                      | ~9 days        | ~1 month        |
+| The same episode, recalled three times                      | ~2 months      | ~1 year         |
+| An episode with arousal 0.8, never recalled                 | ~1 month       | ~4 months       |
+| A fact confirmed ten times                                  | years          | not while confirmed |
+| Anything pinned                                             | always         | never           |
+
+These are defaults in the identity, not constants in code. A compliance agent forgets slower; a triage agent faster.
+
+### 5.5 What sleep costs
+
+Extract is the expensive phase: one mid-tier call per task group, so a busy day for Nia is twenty to forty calls. Compile,
+prospect, compact and prune are code. Dream is capped. Sleep's spend counts against the daily budget (Chapter 6), which
+is one more reason it runs at night when the budget has reset and nothing else is competing for it.
