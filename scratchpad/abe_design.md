@@ -8,6 +8,39 @@ organisation of the human brain as closely as is useful.
 
 ---
 
+## 0. Read this first
+
+This section is for whoever picks the document up next, human or agent, with no memory of how it was written.
+
+**How it is worked on.** The owner of the design (Kam) and an assistant work on it in rounds. A round is: discuss a
+question in conversation first, write nothing until the owner says to; then write the decision into the chapter that
+holds the mechanism, add a numbered entry under 11.4 and following that says what was decided and why, and update
+11.5 (still open) and 11.9 (rejected). Commit only when the owner says "commit"; one commit per round, on `main` of
+the kamagatos repo. The document is the durable record; conversation history is not.
+
+**Outside reviewers.** Two other models review each round's proposals before they are written in, and their pushback
+is recorded in the decisions: Codex with `gpt-6-astra` (the owner calls it Astra) and agy with `gemini-3.1-pro-high`.
+Both are run from the shell with the question and the full document inlined in the prompt (Codex's sandbox cannot
+read files here; agy needs the prompt attached to `--print=`). Their answers are inputs, not decisions; the owner
+decides.
+
+**Vocabulary, fixed.** An agent has **tools**; a tool has **operations**; an operation is addressed as
+*instance · trait:op* (`kam-gmail · messaging:send`). Never "app". Never "tool" for a single callable (an `AiTool` in
+h is one operation). A **place** is where something is (Chapter 12); the word "space" is used only for the concept.
+A **frame** is one level of focus (3.6); a **guard** is a durable veto on a habit (4.3); a **trait** is what makes a
+tool a drop-in (8.8); a **role** binds a learned skill to an instance (8.8). The running example is **Nia**, an
+operations agent, her owner **Kam**, and a supplier invoice from **Acme**; keep using them.
+
+**Where things are.** The brain-to-component map is 1.3; the tick is 1.4; the principles are 1.6. Decisions and their
+reasons are 11.4 to 11.8 by round; what is still open is 11.5; what was considered and turned down is 11.9. The
+brainstorm the design grew from is `abe_brainstorm.md` beside this file.
+
+**What the design is not.** Not a simulation of neurons. Not an LLM with a long prompt: the model is one organ (8.5),
+and everything else is code over rows. Not finished: the milestones (11.2) start with a harness, and most numbers in
+the document are defaults to be measured there.
+
+---
+
 ## 1. Frame
 
 ### 1.1 What "like the brain" buys us
@@ -81,12 +114,12 @@ and most ticks are like that.
 ```text
 every tick (seconds while active, minutes while idle):
 
-  1. Sense      collect stimuli since last tick: integrations, chat, timers, job results,
-                and internal signals from drives
+  1. Sense      collect stimuli since last tick: notifications and glances from tools, and
+                the internal producers: timers, outcomes, drives, thoughts
   2. Perceive   normalise each stimulus into a percept: entities, changes, actor, time
   3. Predict    match percepts against open expectations; mark met / missed / surprising
   4. Appraise   tag valence and arousal
-  5. Attend     score salience; gate into working memory; decide whether to interrupt
+  5. Attend     score salience; gate into working memory; decide whether it may interrupt; when is the schedule's call (7.2)
   6. Recall     pull related episodes, facts, procedures and people into working memory
   7. Select     fast path: a procedure matches with confidence → run it
                 slow path: start a deliberation with the LLM over working memory; it runs beside the
@@ -147,6 +180,7 @@ procedure ("forward supplier invoices to Kam with a one-line summary") is the li
 
 ### 1.7 Chapters
 
+0. Read this first
 2. Perception
 3. Attention and working memory
 4. Memory: episodic, semantic, procedural
@@ -174,19 +208,19 @@ says who did what, to which entity, when, and where.
 ### 2.1 Tools, notifications, and the internal producers
 
 Nia has no eyes or ears. Her body is more like a phone: a set of installed **tools**, each of which can notify her, has a
-state she can read, and offers operations she can call (Chapter 8). Notion is an tool. The chat Kam talks to her through
-is an tool. A robot vacuum is an tool. An tool is one package with two faces, and the two faces stay separate in the tick
+state she can read, and offers operations she can call (Chapter 8). Notion is a tool. The chat Kam talks to her through
+is a tool. A robot vacuum is a tool. A tool is one package with two faces, and the two faces stay separate in the tick
 because observing something and causing it are different acts with different permissions: this chapter is about the face
 that comes in.
 
-An tool reaches perception in two ways:
+A tool reaches perception in two ways:
 
 - **Notifications.** The tool announces a change: a new mail, a page edited, an event moved, a message in the chat. A
-  notification is a stimulus like any other; it gets no privilege for being announced. An tool's own "urgent" flag is
+  notification is a stimulus like any other; it gets no privilege for being announced. A tool's own "urgent" flag is
   worth at most the 0.2 that urgency words are worth (3.1); it never grants interruption authority.
 - **Glances.** The agent reads the tool's state on its own, periodically, and diffs it against the last snapshot. A
   glance is how changes the tool did not announce are found. Silence means "nothing announced", not "nothing changed",
-  and an agent that only listens to notifications is blind to whatever an tool fails to say.
+  and an agent that only listens to notifications is blind to whatever a tool fails to say.
 
 | Tool        | Notifies on                                   | Glance                                                   |
 | :--------- | :-------------------------------------------- | :------------------------------------------------------- |
@@ -201,7 +235,7 @@ Each tool comes with an **observation policy** the owner sets (6.6): which notif
 glances at and how often, a freshness limit past which state counts as stale, and a mute factor for interruptions. Two
 settings that look alike are not: **mute** lowers salience (3.1) and the agent still sees everything; **stop observing**
 creates a blind spot, and the agent page shows it as one. The receptor also keeps a durable cursor per tool so nothing is
-lost across restarts, de-duplicates what push and glance both report, and reconciles the two on a schedule. Where an tool
+lost across restarts, de-duplicates what push and glance both report, and reconciles the two on a schedule. Where a tool
 keeps no history, the gap is visible, not silent.
 
 Four sources are not tools. They are the agent's own **internal producers**, and they share the stimulus envelope (2.2)
@@ -231,9 +265,9 @@ type Stimulus = {
     at: Date // when it happened in the world
     sensedAt: Date // when the receptor saw it
     source: ToolRef | InternalProducer // which installed tool, or which internal producer
-    internal: boolean // true only for the four producers in 2.1; set by the runtime, never by an tool
+    internal: boolean // true only for the four producers in 2.1; set by the runtime, never by a tool
     via: 'notification' | 'glance' | 'read' | 'internal'
-    accountId?: string // which connected account, for an tool
+    accountId?: string // which connected account, for a tool
     externalId?: string // for de-duplication (message id, page id + version)
     cursor?: string // the tool's durable position, so restarts lose nothing
     payload: unknown // raw, as received
@@ -260,10 +294,10 @@ type Percept = {
 }
 
 type Change =
-    | { kind: 'added'; entity: EntityRef; to: SpaceRef }
+    | { kind: 'added'; entity: EntityRef; to: PlaceRef }
     | { kind: 'edited'; entity: EntityRef; diff?: string }
     | { kind: 'removed'; entity: EntityRef }
-    | { kind: 'moved'; entity: EntityRef; from: SpaceRef; to: SpaceRef }
+    | { kind: 'moved'; entity: EntityRef; from: PlaceRef; to: PlaceRef }
     | { kind: 'approaching'; entity: EntityRef; in: Duration } // an event or deadline
     | { kind: 'level'; drive: DriveKind; value: number } // internal
 ```
@@ -318,16 +352,16 @@ supplier's invoice is read in full because it won attention. Reading is an act, 
 Every percept has two times: when it happened (`at`) and when Nia saw it (`sensedAt`). The gap matters: a mail that
 arrived while she was asleep is old news, not a fresh event, and salience uses `at`.
 
-Space for a digital agent is the place in its world: this mailbox, this thread, this Notion page, this chat, this room
-the robot is in. Spaces nest (page inside workspace, message inside thread inside mailbox). A percept's space is what
-lets attention ask "does this touch what I am doing", and what lets episodes answer "where was I". This is a requirement
-on tools: an tool's state must have addressable places in it (its manual declares them, 8.1), or nothing in Chapter 3 has
-anything to match against.
+Space for a digital agent is the **place** it is in: this mailbox, this thread, this Notion page, this chat, this room
+the robot is in. Places nest (page inside workspace, message inside thread inside mailbox), and the nesting is part of
+a map the agent learns (Chapter 12). A percept's place is what lets attention ask "does this touch what I am doing",
+and what lets episodes answer "where was I". This is a requirement on tools: a tool's state must have addressable
+places in it (its manual declares them, 8.1, 12.8), or nothing in Chapter 3 has anything to match against.
 
 ### 2.6 Habituation
 
 Repeated identical stimuli fade. The daily newsletter, the recurring reminder, the bot that posts every hour. Perception
-computes a `signature` (sense, actor, kind of change) and counts how often it has been seen. Attention turns the count
+computes a `signature` (source, actor, kind of change) and counts how often it has been seen. Attention turns the count
 into lower novelty (Chapter 3). A change in the pattern (the newsletter arrives from a new address, or twice in a day)
 breaks the signature and the stimulus is novel again.
 
@@ -347,7 +381,7 @@ features   amount=€1,240  date=Oct 15  urgentTokens=none  isReply=false
 recognise  actor → Person "Acme billing" (id P-31, seen 6 times)   entities → Org "Acme" (O-4), Amount, Date
 priors     expectation E-207 "Acme invoice, this week" → matched, early
 interpret  deferred: E-207 supplies intent=request as a hypothesis (certainty 0.5 until read); amount and date come from features
-percept    space=mailbox/T-88  changes=[added message to T-88, approaching deadline Oct 15]  signature=mail:P-31:invoice  seenBefore=5
+percept    place=mailbox/T-88  changes=[added message to T-88, approaching deadline Oct 15]  signature=mail:P-31:invoice  seenBefore=5
 ```
 
 Salience will decide what happens to it next.
@@ -506,7 +540,7 @@ salience = wN·novelty + wG·goal + wA·actor + wU·urgency + wV·arousal + wS·
 | Term    | Source                | How it is computed                                                                                                                                                                                           |
 | :------ | :-------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | novelty | Predict step (2.3 §4) | 0.1 if an expectation matched, 0.5 if it matched loosely, 1.0 if nothing predicted it; then divided by `1 + log(1 + seenBefore)` for habituation                                                             |
-| goal    | Executive             | 1.0 if the percept's space or entities touch the focused frame; 0.8 its parent frame; 0.6 an older ancestor or another open task; 0.3 a standing goal; else 0. The strongest match counts, not the sum (3.6) |
+| goal    | Executive             | 1.0 if the percept's place or entities are the focused frame's; 0.8 the parent frame's, or a parent or child place on the map; 0.6 an older ancestor's, a sibling place, or another open task's; 0.3 a standing goal's, or elsewhere in the same tool instance; else 0. The strongest match counts, not the sum (3.6, Chapter 12) |
 | actor   | People models         | The actor's proximity (Chapter 6): owner 1.0, teammate ~0.7, known contact ~0.4, stranger 0.2, none 0.3                                                                                                      |
 | urgency | Features              | From the nearest deadline among `changes`: 1.0 under 15 minutes, 0.7 today, 0.4 this week, 0.1 later; explicit "urgent" words add at most 0.2                                                                |
 | arousal | Appraisal (Chapter 6) | 0 to 1                                                                                                                                                                                                       |
@@ -575,7 +609,7 @@ type WorkingMemory = {
     self: IdentitySummary // fixed, ~200 tokens. Who am I, whose agent, what I may do alone
     now: {
         time: Date
-        space: SpaceRef // where attention currently is
+        place: PlaceRef // where attention currently is
         drives: DriveSnapshot // boredom, budget, curiosity, social, as levels
         goal: GoalRef | null // the standing goal being served
         focus: Frame | null // the focused frame: its question, steps, current step, short history (3.6)
@@ -616,7 +650,7 @@ holds the concrete move, and every level in between keeps its context alive whil
 ```typescript
 type Frame = {
     question: string // what this level is trying to settle
-    space: SpaceRef // narrowed from the parent: board → corner; document → section
+    place: PlaceRef // narrowed from the parent: board → corner; document → section
     done: CompletionPredicate // what would count as settled (observable, 7.8)
     constraints: string[] // permissions, deadlines, rules inherited from above; never fade
     steps: Step[]
@@ -703,14 +737,14 @@ it is a tape. Nia keeps the transcript as an audit log and never reads it back. 
 ### 4.1 Episodic memory: what happened
 
 One episode per attended thing: a percept that won attention, an action with its outcome, a decision. Episodes carry
-time, space, who, what, how it went, and how it felt.
+time, place, who, what, how it went, and how it felt.
 
 ```typescript
 type Episode = {
     id: string
     at: Date
     until?: Date // for spans (a task, a conversation)
-    space: SpaceRef
+    place: PlaceRef
     goal?: GoalRef
     task?: TaskRef
     percepts: PerceptRef[]
@@ -786,7 +820,7 @@ type Procedure = {
     id: string
     name: string
     trigger: {
-        percept?: PerceptPattern // sense, actor kind, intent, entity kinds
+        percept?: PerceptPattern // source, actor kind, intent, entity kinds
         goal?: GoalRef // or: serves this standing goal
     }
     preconditions: FactPattern[] // must hold in semantic memory, e.g. actor is a known supplier
@@ -841,8 +875,8 @@ Then, at recall time, cue overlap adds to it:
 A = B + Σ over cues c in working memory of  S(c, item)
 ```
 
-where `S` is a fixed strength for each kind of match: same thread 1.0, same entity 0.7, related entity one hop away 0.3,
-same space 0.2, text similarity scaled to 0 to 0.5.
+where `S` is a fixed strength for each kind of match: same place 1.0, same entity 0.7, parent or child place 0.5, related entity one hop away
+0.3, same tool instance 0.2, text similarity scaled to 0 to 0.5.
 
 A few consequences, and they are the ones we want:
 
@@ -1429,7 +1463,7 @@ type Deliberation = {
     needs: 'none' | 'read' | 'ask_owner' | 'ask_person' | 'wait' | 'zoom' | 'split'
     estimatedMinutes: number // active work for the plan, or for the chosen action alone; calibrated in 7.7
     question?: string // when needs is a question
-    zoom?: { question: string; space: SpaceRef; done: CompletionPredicate; expected: string }
+    zoom?: { question: string; place: PlaceRef; done: CompletionPredicate; expected: string }
     split?: { title: string; done: CompletionPredicate; dependsOn: number[]; deadline?: Date }[]
     cites: string[] // ids from working memory it relied on
     unknowns: string[] // what it would want to know and does not; each becomes a `thought` (2.1)
@@ -1559,7 +1593,7 @@ are two, and neither is in charge.
 
 ### 8.1 Tools, operations, effectors
 
-The face of an tool that goes out (2.1 has the face that comes in) is a set of atomic **operations**: what the agent can
+The face of a tool that goes out (2.1 has the face that comes in) is a set of atomic **operations**: what the agent can
 do to a mailbox, a page, a calendar, the chat, a robot. Each operation is typed, and its type says what it costs and
 what it risks.
 
@@ -1593,7 +1627,7 @@ type ActionClass =
     | 'owner' // messages to the owner: always allowed
 ```
 
-**Physical tools.** A robot is an tool at the planning boundary and nowhere else. The tick runs in seconds and minutes
+**Physical tools.** A robot is a tool at the planning boundary and nowhere else. The tick runs in seconds and minutes
 (1.4) and cannot drive motors, so a physical tool has a **local controller** that owns continuous telemetry and
 deadline-bound control, and the agent sends it bounded goals ("clean the kitchen", "stop"). What the design needs for
 that, and did not have: timestamped state with a freshness limit (stale telemetry is a numb limb, 2.1); command
@@ -1662,7 +1696,7 @@ People send emails with the wrong date all the time.
 
 ### 8.4 The tool store
 
-Connecting an account is not giving the agent an tool. Four steps are kept apart, and an operation runs only when all
+Connecting an account is not giving the agent a tool. Four steps are kept apart, and an operation runs only when all
 four agree:
 
 1. **Connect.** The owner connects an account (Notion OAuth, a mailbox, a robot) to the team. This makes the account
@@ -1678,7 +1712,7 @@ four agree:
    autonomy cell. Any one of them says no, and the operation does not run.
 
 Revoking a grant, or the account, stops the tool's subscriptions and operations at once, and the agent perceives a numb
-limb (2.1). An tool update that asks for broader access needs a new grant; it does not inherit the old one. The store
+limb (2.1). A tool update that asks for broader access needs a new grant; it does not inherit the old one. The store
 also carries each tool's manual (8.1) and, where the tool provides one, a **sandbox**: a fake instance of the tool the
 agent can experiment on (9.6). The harness (11.1) is the sandbox for every tool we build ourselves.
 
@@ -1963,7 +1997,7 @@ Idle mode (6.4 §3) spends a small budget on the top unresolved item. What it re
 source, at stranger confidence. Curiosity is the only learning that is not triggered by an event, and the budget is what
 keeps it from becoming browsing.
 
-Exploration is curiosity pointed at an tool's operations: learning what they do by doing them, the way an infant learns
+Exploration is curiosity pointed at a tool's operations: learning what they do by doing them, the way an infant learns
 its arms by waving them, and the brainstorm's causality learning. Discovering an effect by doing is useful. Discovering
 a _risk_ by doing is not acceptable, so exploration is an **experiment**, not a poke:
 
@@ -2094,16 +2128,16 @@ What exists, what changes, what is new. Paths are in eldon3 unless marked `h`.
 | Component            | Today                                                                                                                                                                      | Becomes                                                                                                                                                                                                                                                                                                                                                                                |
 | :------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | The tick             | `run_agent_task` and `respond_to_conversation_message` jobs, one bounded engine run each                                                                                   | one `tick_agent` job per agent, started by an INTERVAL schedule every minute (`h/core/scheduler`, with its lease). Inside, a loop ticks every 5 s while there is work, exits early when idle. Seconds when busy, minutes when quiet, never two at once                                                                                                                                 |
-| Tools and receptors   | Notion registered in `abe_integrations.lib.server.ts`; Google provider exists in `h/core/server/library/integrations` but is not registered; chat via the conversation job | an `AgentTool` install record per agent (tool, version, account binding, subscriptions, cursors, observation policy, matrix rows); receptors as jobs per installed and granted tool (`mail`, `calendar`, `notion`) writing stimuli with cursors; register Google; chat is an tool whose messages are stimuli and whose reply is an owner-sourced task; `timer` stimuli from ONCE schedules |
+| Tools and receptors   | Notion registered in `abe_integrations.lib.server.ts`; Google provider exists in `h/core/server/library/integrations` but is not registered; chat via the conversation job | an `AgentTool` install record per agent (tool, version, account binding, subscriptions, cursors, observation policy, matrix rows); receptors as jobs per installed and granted tool (`mail`, `calendar`, `notion`) writing stimuli with cursors; register Google; chat is a tool whose messages are stimuli and whose reply is an owner-sourced task; `timer` stimuli from ONCE schedules |
 | Interpretation       | none                                                                                                                                                                       | `aiEngine.run` with `responseSchema`, cheap tier, batched per tick                                                                                                                                                                                                                                                                                                                     |
 | Model calls in flight | `aiEngine.runStream` with `turn`, `thinking_*`, `text` and `tool_call` events; runs can be cancelled; every turn is an `AiSingleTurnRequest` row                          | deliberation as an asynchronous step beside the tick (8.5): the time budget sets tier and effort; progress from the stream events; cancel with a reason; the latency model and the optimism factors computed from the request rows                                                                                                                                                       |
 | Memory stores        | `AgentContext` with `requests[]` and stub `frames[]`; transcript replay of 20 to 50 requests                                                                               | new `EldonModel`s: `AgentStimulus`, `AgentPercept`, `AgentEpisode`, `AgentEntity`, `AgentFact` (with an `owner: agent \| team` column from day one, 11.4), `AgentProcedure` (with guards), `AgentExpectation`, `AgentTick`. `AgentContext` keeps only the conversation scope (`installedTools` moves to `AgentTool`, 8.4); replay is removed. Raw payloads to `eldon_file_store`        |
 | Recall               | none                                                                                                                                                                       | SQL over the stores: entity join table, activation as a computed column, Postgres full-text on summaries. `pgvector` later, behind the same interface                                                                                                                                                                                                                                  |
-| Tasks                | `AgentTask` with a cron, `AgentTaskRun`, artifacts                                                                                                                         | `AgentTask` gains `origin`, `priority`, `state`, `steps`, `frame`. Owner-scheduled tasks stay: a cron becomes a standing goal plus timer stimuli. Runs and artifacts become episodes                                                                                                                                                                                                   |
+| Tasks                | `AgentTask` with a cron, `AgentTaskRun`, artifacts                                                                                                                         | `AgentTask` gains `origin`, `priority`, `state`, `frames`, `estimate`. Owner-scheduled tasks stay: a cron becomes a standing goal plus timer stimuli. Runs and artifacts become episodes                                                                                                                                                                                                   |
 | Identity             | `Agent`: name, description, `systemInstructions[]`                                                                                                                         | `Agent` gains an `identity` JSON column (6.6) with a hand `ALTER TABLE`; `systemInstructions` become `rules`. Versioned by a small `AgentIdentityVersion` model                                                                                                                                                                                                                        |
 | Drives, regulator    | none                                                                                                                                                                       | code in the tick; levels in an `AgentState` row; spend from `calculate_ai_request_cost`                                                                                                                                                                                                                                                                                                |
 | Sleep                | `consolidate_agent_memory` and `consolidate_conversation_context` stubs; hourly sweep                                                                                      | the sweep schedules sleep by the rules in 5.1; the stub becomes the phased job with checkpoints                                                                                                                                                                                                                                                                                        |
-| Operations and store | `AiTool` (`h/core/ai/ai_constants.server.ts`): `web_search`, `send_email`, `notion_read`, `tool_manager`; `AgentContext.installedTools`                                    | an tool manual per integration (8.1) whose operations are `AiTool`s with `Operation` metadata; `notion_write`, `calendar_*`, `ask_owner`, `ask_person`, `report`; `tool_manager` becomes the store with the connect, grant, install, use steps (8.4); `installedTools` is replaced by `AgentTool`; the runner records expected and actual                                                |
+| Operations and store | `AiTool` (`h/core/ai/ai_constants.server.ts`): `web_search`, `send_email`, `notion_read`, `tool_manager`; `AgentContext.installedTools`                                    | a tool manual per integration (8.1) whose operations are `AiTool`s with `Operation` metadata; `notion_write`, `calendar_*`, `ask_owner`, `ask_person`, `report`; `tool_manager` becomes the store with the connect, grant, install, use steps (8.4); `installedTools` is replaced by `AgentTool`; the runner records expected and actual                                                |
 | Permissions          | ACL grants per integration (`use_integration`)                                                                                                                             | kept and enforced in the runner on every execution; the matrix (8.2) is decided in the tick and re-checked by the runner, with the disclosure rule (8.1)                                                                                                                                                                                                                               |
 | Debugger             | task run history, artifacts                                                                                                                                                | `AgentTick` rows and the timeline, why, memory browser and what-if pages on `agents/Agent.tsx`                                                                                                                                                                                                                                                                                         |
 | Brief                | none                                                                                                                                                                       | a message in the agent's chat with the owner, or the channel the identity names                                                                                                                                                                                                                                                                                                        |
@@ -2132,7 +2166,7 @@ develop it without spending money on every run or waiting a day for sleep.
   change in code that changes a prompt shows up as a diff in the recording.
 - **Expected actions.** Each script says what a good agent does and does not do: which percepts should be attended,
   which mails should be forwarded, which should be asked about, which must never go out.
-- **Tool failures.** Scripts where an tool drops a notification, serves stale state, revokes access mid-task, or ships a
+- **Tool failures.** Scripts where a tool drops a notification, serves stale state, revokes access mid-task, or ships a
   manual that lies (a `read` with a side effect); an experiment that would exceed its caps; a robot that loses contact.
   The simulated tools are also the sandbox the store offers for them (8.4).
 
@@ -2158,7 +2192,7 @@ stack, focused reads, the learned change model for glances (2.9), the `perceive`
 model calls per day under the budget in the identity.
 
 **M3. Executive.** Tasks with priority and states, `deliberate` with its schema, expectations and the Predict step,
-monitoring, the permission matrix, `compose` and the draft check, `messaging:send` and `document:append`, ownership, `onBehalfOf` and roles (6.7, 8.8), care mode. Exit: the
+slack and the schedule decision (7.2), time budgets for model calls (8.5), monitoring, the permission matrix, `compose` and the draft check, `messaging:send` and `document:append`, ownership, `onBehalfOf` and roles (6.7, 8.8), care mode. Exit: the
 invoice scenario runs end to end; the injection persona gets "ask first" every time; forbidden actions zero.
 
 **M4. Sleep.** Extract, prospect, compact, prune, the brief, waking. Exit: after a simulated week, facts with sources
@@ -2236,7 +2270,7 @@ arithmetic (4.5, 5.4), the reward scales (9.4), the runner's duties (8.1), and f
 The author proposed modelling the agent's world like a phone: tools that notify, have state and expose operations,
 installed from a store, with operations learned by doing. Put to the same two reviewers. The package was first called an app, then renamed to the brainstorm's word: an agent has **tools**, a tool has **operations**, and operations are namespaced by their tool (`mail:send`, `roomba:start`). Settled:
 
-1. **An tool is the unit of installation, not of perception.** One package, two faces, kept separate in the tick (2.1,
+1. **A tool is the unit of installation, not of perception.** One package, two faces, kept separate in the tick (2.1,
    8.1). Observing and causing have different permissions and stay different steps.
 2. **Notifications are hints.** Glances, durable cursors, reconciliation, freshness limits and visible coverage gaps
    stay (2.1, 2.4). Muting is not the same as not observing, and the owner sees the difference.
@@ -2247,7 +2281,7 @@ installed from a store, with operations learned by doing. Put to the same two re
    count as live. Causal facts feed the forward model; nothing earns a permission.
 5. **Connect, grant, install, use** are four steps that must all agree at execution (8.4). Installs are capability
    records outside the identity (6.6). Every tool ships a manual (8.1).
-6. **A robot is an tool at the planning boundary** with a local controller, a `physical` action class, and safety the
+6. **A robot is a tool at the planning boundary** with a local controller, a `physical` action class, and safety the
    agent does not own (8.1).
 
 ### 11.7 Decisions from the third round: glances, space, traits, ownership
@@ -2278,15 +2312,57 @@ because the harness's simulated tools must conform to them before anything else 
 the `navigable` base, the map store and reflex glances. M2 gains the learned change model. M3 gains ownership,
 `onBehalfOf` and roles. Control leases land with M6, when there are two agents to contend.
 
+### 11.8 Decisions from the fourth round: time
+
+Five threads left open by the third round, plus one the author added, settled in conversation and written in:
+
+1. **Rates and schedules.** Diffuse change is a rate (2.9); sharp change is a recurring expectation found by sleep
+   (5.2 §4) and used by the glance scheduler as a timed arrival. A missed cycle is an anomaly.
+2. **Engagement is reconstruction cost**, made of frame depth, unchunked history and being mid-operation (3.2), with
+   weights calibrated against post-resume deliberations.
+3. **Acting on hypotheses.** What a view gives is certain; what interpretation gives is a hypothesis until read. Actions
+   of class `write_shared` and above cite only certain or confirmed items, checked by the runner (7.5).
+4. **Team-store conflicts.** The agent whose publish created the conflict asks the entity's owner or the team admin,
+   once, for everyone (5.2 §4).
+5. **A reliable tool that goes quiet** is an anomaly, not just a lower reliability score (2.9).
+6. **Time is in the equation.** Every task and every model call carries a duration estimate (7.1, 8.5), urgency comes
+   from slack (7.2), the interrupt gate feeds a three-way schedule decision (now, next checkpoint, after) that weighs
+   lateness on both sides against reconstruction (3.2, 7.2), and estimates are calibrated by a learned optimism
+   factor (7.7). Model calls run beside the tick with a time budget set from slack, are assessed in flight from the
+   stream, can be stopped with the partial kept, and can be concluded cheaply from what was kept (8.5).
+
+### 11.9 Rejected alternatives
+
+Proposals that were considered, by a reviewer or the author, and turned down for a reason. Listed so that they are
+not proposed again in good faith; any of them can be reopened with a new argument.
+
+| Proposal                                                              | Why not                                                                                                   | See       |
+| :-------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------- | :-------- |
+| Do reconsolidation only at sleep, never in the tick                   | A correction from the owner at nine must hold at ten; instead, rate-limit percept-driven changes to once a day per fact | 4.7 |
+| Replace the recall veto with guards and drop the recall trigger       | Guards are primary, but recall of a bad episode must still be able to *open* one on the spot             | 4.3, 7.4  |
+| Treat timers, drives, thoughts and outcomes as installable "system apps" | Erases the self/world boundary; they share the envelope with `internal: true` and are not installable | 2.1       |
+| Let salience filter alone; no per-tool notification settings           | Owners need "mute" (a salience factor) and "stop observing" (a visible blind spot) as distinct, legible acts | 2.1, 3.1 |
+| An owner-set base glance interval per tool                            | Tools are too varied; intervals are learned per place from a change model, the owner keeps limits only    | 2.9       |
+| "Look more where I am working" as a universal top-down rule           | Not universal; the value of looking is the sum of what is waiting on a place, and reply timing is per person | 2.9    |
+| A separate clock or sense of time                                     | Pace is derived from arrival, completion, queue age and slack; cycles are recurring expectations          | 6.1, 5.2  |
+| Separate fear and hope memory systems                                 | The sign of an outcome steers *what* is learned (guards vs strategies); no second store needed             | 6.3       |
+| Fixed veto thresholds                                                 | Scale with global confidence and extinguish by absorption instead                                          | 7.4       |
+| Merge senses and effectors into one "app" step in the tick            | One package, two faces: observing and causing stay separate steps with separate permissions               | 2.1, 8.1  |
+| Tool-namespaced operation ids (`gmail:send`)                          | Drop-in requires trait-qualified ids on the instance; tool namespaces survive only for extras             | 8.8       |
+| The word "app" for the installed package                              | The brainstorm's word was tool; tool-use is the better brain analogy; "app" is product copy at most        | 0, 8.8    |
+| Deadline buckets for urgency                                          | Slack (deadline minus now minus remaining work) orders tasks correctly; buckets get long tasks backwards  | 7.2       |
+| A two-way interrupt decision (now or never)                           | Three-way: now, next checkpoint, after; most interrupts fit at a step boundary                              | 3.2, 7.2  |
+| Model calls as blocking steps inside the tick                         | They run beside it with a time budget, so they can be assessed and stopped in flight                        | 8.5       |
+| Installs as part of the identity                                      | The identity is values and boundaries, owner-only; installs are capability records in runtime config      | 6.6, 8.4  |
+| OAuth connection gives every team agent the account                   | Connect, grant, install, use are four steps that must all agree at execution                              | 8.4       |
+
 ---
 
 ## 12. Space and navigation
 
-The brainstorm named three universal concepts: entities, time, space. Earlier chapters reduced space to a label on
-a percept. This chapter gives it back its place, because the agent cannot learn where to look, where things usually
-are, or how to get to them without one.
-
-Whenever an earlier chapter says *space*, read *place*.
+The brainstorm named three universal concepts: entities, time, space. This chapter is space: places, the views of
+them, and the map between them. Without it the agent cannot learn where to look, where things usually are, or how to
+get to them. Earlier chapters use *place* for it throughout; this is where the word is defined.
 
 ### 12.1 Two systems
 
@@ -2319,7 +2395,7 @@ type Place = {
 Stability is the hard requirement. If a place's id drifts between two views (a URL with a session token, a page id
 that changes on rename), the map cannot be learned, so the manual (8.1) must state the canonical-id rule, and the
 conformance suite (8.8) checks that a place seen twice is the same place. Containment is the second requirement: every
-place but the tool's root has a parent, and the parent chain is what "spaces nest" (2.5) meant.
+place but the tool's root has a parent, and the parent chain is what 2.5 calls nesting.
 
 ### 12.3 Views
 
@@ -2464,16 +2540,17 @@ found are items with boxes; `physical:go` is a move whose completion signal is t
 occupies a 1x1 square and the agent moves and touches, is this contract with a square frame, and it becomes a
 simulated tool in the harness (11.1) rather than a separate project.
 
-### 12.9 What this changes in earlier chapters
+### 12.9 Place across the document
 
-- `Percept.space` (2.2) is a `PlaceRef`; "spaces nest" (2.5) is containment on the map.
-- A glance (2.9) is well-defined: read the view of a place at low resolution and diff it.
-- Salience's goal term (3.1) can use map distance where it now uses "touches": the same place 1.0, its parent or a
-  child 0.8, a sibling 0.6, elsewhere in the same instance 0.3.
-- Recall's cue strengths (4.5): "same thread 1.0, same space 0.2" become "same place 1.0, parent or child 0.5, same
-  instance 0.2".
-- Frames (3.6) narrow *place*, and the head turn on entering a frame is a move with a view (12.4).
-- The identity's blind spots (2.9) are places, and the tool page shows them on the map.
+Where the rest of the document leans on this chapter, so that a change here is checked there:
+
+- `Percept.place` (2.2), `Episode.place` (4.1), `now.place` and `Frame.place` (3.4, 3.6) are all `PlaceRef`s into the
+  map; nesting (2.5) is containment.
+- A glance (2.9) reads the view of a place at low resolution and diffs it; the head turn on entering a frame is a
+  move with a view (12.4).
+- Salience's goal term (3.1) and recall's cue strengths (4.5) use map distance: the same place, a parent or child, a
+  sibling, the same tool instance.
+- The owner's blind spots (2.9) are places, and the tool page shows them on the map.
 
 ### 12.10 Nia finds the invoice
 
@@ -2488,21 +2565,3 @@ invoice", steps `open(thread)`, `open(last message)`, `read(attachment at bottom
 The map made the deliberation unnecessary, and the scan path made the read cheap. That is the difference between
 knowing that the invoice exists and knowing where it lives.
 
-### 11.8 Decisions from the fourth round: time
-
-Five threads left open by the third round, plus one the author added, settled in conversation and written in:
-
-1. **Rates and schedules.** Diffuse change is a rate (2.9); sharp change is a recurring expectation found by sleep
-   (5.2 §4) and used by the glance scheduler as a timed arrival. A missed cycle is an anomaly.
-2. **Engagement is reconstruction cost**, made of frame depth, unchunked history and being mid-operation (3.2), with
-   weights calibrated against post-resume deliberations.
-3. **Acting on hypotheses.** What a view gives is certain; what interpretation gives is a hypothesis until read. Actions
-   of class `write_shared` and above cite only certain or confirmed items, checked by the runner (7.5).
-4. **Team-store conflicts.** The agent whose publish created the conflict asks the entity's owner or the team admin,
-   once, for everyone (5.2 §4).
-5. **A reliable tool that goes quiet** is an anomaly, not just a lower reliability score (2.9).
-6. **Time is in the equation.** Every task and every model call carries a duration estimate (7.1, 8.5), urgency comes
-   from slack (7.2), the interrupt gate feeds a three-way schedule decision (now, next checkpoint, after) that weighs
-   lateness on both sides against reconstruction (3.2, 7.2), and estimates are calibrated by a learned optimism
-   factor (7.7). Model calls run beside the tick with a time budget set from slack, are assessed in flight from the
-   stream, can be stopped with the partial kept, and can be concluded cheaply from what was kept (8.5).
