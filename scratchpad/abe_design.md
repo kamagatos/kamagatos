@@ -15,17 +15,17 @@ organisation of the human brain as closely as is useful.
 We are not simulating neurons. We are copying the brain's **organisation**: which jobs it splits apart, what it keeps
 small, what it does in the background, what it forgets. Each of those choices solves a problem we also have.
 
-| Brain trait                                 | Problem it solves for us                                        |
-| :------------------------------------------ | :-------------------------------------------------------------- |
-| Continuous sensing, but a tiny attention    | Cheap to be always on; only a few things ever reach the LLM     |
-| Working memory holds ~4 to 7 chunks         | Prompts stay small, fast, and readable in a debugger            |
-| Several memory systems, not one             | Facts, events and skills need different storage and retrieval   |
-| Sleep consolidates and forgets              | Memory stays fast and relevant; noise is dropped, not kept      |
-| Habits run without thinking                 | Most repeated work costs no LLM call and takes milliseconds     |
-| Prediction first, then surprise             | Novelty and errors are detected for free, and drive learning    |
-| Drives (hunger, boredom, curiosity)         | The agent acts unprompted, and knows when to stop spending      |
-| Emotion tags memories and steers attention  | Important things are remembered and handled with care           |
-| Language is one region, not the whole brain | The LLM is a tool the agent uses, not the agent itself          |
+| Brain trait                                 | Problem it solves for us                                      |
+| :------------------------------------------ | :------------------------------------------------------------ |
+| Continuous sensing, but a tiny attention    | Cheap to be always on; only a few things ever reach the LLM   |
+| Working memory holds ~4 to 7 chunks         | Prompts stay small, fast, and readable in a debugger          |
+| Several memory systems, not one             | Facts, events and skills need different storage and retrieval |
+| Sleep consolidates and forgets              | Memory stays fast and relevant; noise is dropped, not kept    |
+| Habits run without thinking                 | Most repeated work costs no LLM call and takes milliseconds   |
+| Prediction first, then surprise             | Novelty and errors are detected for free, and drive learning  |
+| Drives (hunger, boredom, curiosity)         | The agent acts unprompted, and knows when to stop spending    |
+| Emotion tags memories and steers attention  | Important things are remembered and handled with care         |
+| Language is one region, not the whole brain | The LLM is a tool the agent uses, not the agent itself        |
 
 The last row is the most important. In most "LLM agents" the model is the whole brain: memory is a transcript, decision
 is the next token, and every step is a call. Here the LLM is the **language and reasoning cortex**. Everything else
@@ -34,44 +34,47 @@ get the goals from the brainstorm:
 
 - **Debuggability:** every tick leaves a trace of what was sensed, what won attention, what was recalled, what was
   decided and why. The agent explains itself from the trace, not from a fresh guess.
-- **No hallucination:** facts live in memory stores with sources. The LLM reasons over what it is shown and marks what
-  it does not know. Outbound claims are checked against memory before they leave.
+- **Grounded claims:** facts live in memory stores with sources. The LLM reasons over what it is shown, cites it, and
+  marks what it does not know. Outbound claims are checked against memory before they leave. Predictions stay hypotheses
+  until observed. The promise is far fewer unsupported claims, not zero; no architecture can promise zero.
 - **Reliability:** repeated tasks become procedures. Procedures are deterministic.
 - **Performance:** the fast path (habit) runs without a model. The slow path (deliberation) runs on a bounded prompt.
 
 ### 1.2 Running example
 
 To keep the text concrete, one agent appears throughout: **Nia**, an operations agent on a three-person team. Her owner
-is Kam. She has a mailbox, a calendar and a Notion workspace. Her standing job: keep Kam's inbox handled, keep the
-team's weekly plan in Notion up to date, and flag anything that needs Kam.
+is Kam. She has four apps installed: mail, calendar, Notion and the chat Kam talks to her through. Her standing job:
+keep Kam's inbox handled, keep the team's weekly plan in Notion up to date, and flag anything that needs Kam.
 
 ### 1.3 The brain map
 
-| Brain                                       | Agent component     | Job                                                                         |
-| :------------------------------------------ | :------------------ | :-------------------------------------------------------------------------- |
-| Senses, thalamus                            | **Perception**      | Turn raw stimuli (mail, chat, calendar, timers, drives) into percepts       |
-| Salience network (insula, cingulate)        | **Attention**       | Score percepts; let a few into working memory; interrupt when needed        |
-| Prefrontal cortex                           | **Working memory**  | The bounded "now": self, goal, task, attended percepts, recalled memories   |
-| Hippocampus                                 | **Episodic memory** | What happened, when, with whom, how it went                                 |
-| Neocortex                                   | **Semantic memory** | Entities and facts with confidence: people, projects, documents, rules      |
-| Basal ganglia, cerebellum                   | **Procedures**      | Compiled skills that run without deliberation                               |
-| Sleep, hippocampal replay                   | **Consolidation**   | Nightly job: extract facts, compile habits, compact, forget                 |
-| Predictive coding, cerebellum               | **Expectations**    | What should happen next; surprise when it does not                         |
-| Hypothalamus, interoception                 | **Drives**          | Boredom, budget, curiosity, social contact; set-points that create stimuli  |
-| Amygdala, appraisal                         | **Appraisal**       | Valence and arousal on percepts; weighs attention and memory strength       |
-| Prefrontal cortex, basal ganglia            | **Executive**       | Goals → tasks → steps; pick one action, inhibit the rest; monitor outcome   |
-| Motor cortex, effectors                     | **Tools**           | Typed atomic operations with cost, reversibility and permission             |
-| Language cortex                             | **LLM**             | Understand and produce language; deliberate over working memory            |
-| Default mode network                        | **Idle mode**       | When nothing is pressing: review, plan, explore, per identity               |
-| Theory of mind                              | **People models**   | What each person knows, wants, and how close they are                       |
-| Sense of self                               | **Identity**        | Name, role, values, autonomy level, owner. Fixed by the owner               |
+| Brain                                | Agent component     | Job                                                                             |
+| :----------------------------------- | :------------------ | :------------------------------------------------------------------------------ |
+| Body, attached devices               | **Apps**            | The agent's world: each app notifies, has state to read, and operations to call |
+| Senses, thalamus                     | **Perception**      | Turn raw stimuli (notifications, glances, timers, drives) into percepts         |
+| Salience network (insula, cingulate) | **Attention**       | Score percepts; let a few into working memory; interrupt when needed            |
+| Prefrontal cortex                    | **Working memory**  | The bounded "now": self, goal, task, attended percepts, recalled memories       |
+| Prefrontal hierarchy (front to back) | **Focus**           | Zoom into a sub-question; keep ancestors as breadcrumbs; pop with a result      |
+| Hippocampus                          | **Episodic memory** | What happened, when, with whom, how it went                                     |
+| Neocortex                            | **Semantic memory** | Entities and facts with confidence: people, projects, documents, rules          |
+| Basal ganglia, cerebellum            | **Procedures**      | Compiled skills that run without deliberation                                   |
+| Sleep, hippocampal replay            | **Consolidation**   | Nightly job: extract facts, compile habits, compact, forget                     |
+| Predictive coding, cerebellum        | **Expectations**    | What should happen next; surprise when it does not                              |
+| Hypothalamus, interoception          | **Drives**          | Boredom, budget, curiosity, social contact; set-points that create stimuli      |
+| Amygdala, appraisal                  | **Appraisal**       | Valence and arousal on percepts; weighs attention and memory strength           |
+| Prefrontal cortex, basal ganglia     | **Executive**       | Goals → tasks → steps; pick one action, inhibit the rest; monitor outcome       |
+| Motor cortex, effectors              | **Tools**           | Typed atomic operations with cost, reversibility and permission                 |
+| Language cortex                      | **LLM**             | Understand and produce language; deliberate over working memory                 |
+| Default mode network                 | **Idle mode**       | When nothing is pressing: review, plan, explore, per identity                   |
+| Theory of mind                       | **People models**   | What each person knows, wants, and how close they are                           |
+| Sense of self                        | **Identity**        | Name, role, values, autonomy level, owner. Fixed by the owner                   |
 
 Each component gets its own chapter. Chapter 10 maps them onto eldon3 and h.
 
 ### 1.4 The tick
 
-The agent is a loop. The brain never stops sensing; the loop never stops ticking. A tick is cheap when nothing
-happens, and most ticks are like that.
+The agent is a loop. The brain never stops sensing; the loop never stops ticking. A tick is cheap when nothing happens,
+and most ticks are like that.
 
 ```text
 every tick (seconds while active, minutes while idle):
@@ -136,8 +139,8 @@ procedure ("forward supplier invoices to Kam with a one-line summary") is the li
 7. **Drives make it autonomous.** No drive, no unprompted action.
 8. **Understand emotion, do not perform it.** Appraisal is internal. Tone toward people comes from people models.
 9. **The trace is the explanation.** "Why did you do that" is answered from the tick record.
-10. **Autonomy is a dial the owner holds.** Irreversible or outward-facing actions need the identity's permission
-    level, or the owner.
+10. **Autonomy is a dial the owner holds.** Irreversible or outward-facing actions need the identity's permission level,
+    or the owner.
 
 ### 1.7 Chapters
 
@@ -156,77 +159,113 @@ procedure ("forward supplier invoices to Kam with a one-line summary") is the li
 
 ## 2. Perception
 
-Senses turn physical stimuli into signals the brain can use. The eye does not send pictures; it sends edges, motion
-and contrast, and later stages build objects out of them, helped by what the brain already expects to see. Perception
-is continuous, parallel, cheap, and mostly ignored.
+Senses turn physical stimuli into signals the brain can use. The eye does not send pictures; it sends edges, motion and
+contrast, and later stages build objects out of them, helped by what the brain already expects to see. Perception is
+continuous, parallel, cheap, and mostly ignored.
 
 For Nia, a stimulus is an email, a chat message, a calendar change, a Notion edit, a timer, the result of her own
 action, or a signal from one of her drives. Perception turns each into a **percept**: a small structured record that
 says who did what, to which entity, when, and where.
 
-### 2.1 Senses
+### 2.1 Apps, notifications, and the internal producers
 
-A sense is a source of stimuli plus the code that reads it (the receptor). Each integration an agent is granted
-becomes one or more senses. Internal sources are senses too, so everything enters through one door.
+Nia has no eyes or ears. Her body is more like a phone: a set of installed **apps**, each of which can notify her, has a
+state she can read, and offers operations she can call (Chapter 8). Notion is an app. The chat Kam talks to her through
+is an app. A robot vacuum is an app. An app is one package with two faces, and the two faces stay separate in the tick
+because observing something and causing it are different acts with different permissions: this chapter is about the face
+that comes in.
 
-| Sense           | Stimulus                                    | Receptor                                                   |
-| :-------------- | :------------------------------------------ | :--------------------------------------------------------- |
-| `mail`          | New or changed message in a mailbox         | Poll or watch; headers and snippet only                    |
-| `chat`          | Message in an Abe conversation              | Push from the app                                          |
-| `calendar`      | Event created, moved, cancelled, or near    | Poll a rolling window; diff against the last snapshot      |
-| `notion`        | Page created or edited                      | Poll `last_edited_time`; diff blocks against last snapshot |
-| `timer`         | An expectation's deadline, a scheduled tick | The scheduler                                              |
-| `outcome`       | Result of the agent's own action            | The tool runner                                            |
-| `drive`         | A drive crossed its set-point               | The regulator (Chapter 6)                                  |
-| `web`           | Result of a requested read                  | Only on demand (see active sensing)                        |
+An app reaches perception in two ways:
 
-A revoked or failing integration is a numb sense. The receptor emits a stimulus saying so, and the agent perceives its
-own numbness instead of silently going blind. That is how Nia ends up telling Kam "I lost access to the calendar"
-instead of missing meetings.
+- **Notifications.** The app announces a change: a new mail, a page edited, an event moved, a message in the chat. A
+  notification is a stimulus like any other; it gets no privilege for being announced. An app's own "urgent" flag is
+  worth at most the 0.2 that urgency words are worth (3.1); it never grants interruption authority.
+- **Glances.** The agent reads the app's state on its own, periodically, and diffs it against the last snapshot. A
+  glance is how changes the app did not announce are found. Silence means "nothing announced", not "nothing changed",
+  and an agent that only listens to notifications is blind to whatever an app fails to say.
+
+| App        | Notifies on                                   | Glance                                                   |
+| :--------- | :-------------------------------------------- | :------------------------------------------------------- |
+| `mail`     | New or changed message                        | Headers and snippets of a rolling window; durable cursor |
+| `chat`     | Message in a conversation                     | Not needed; the app pushes everything                    |
+| `calendar` | Event created, moved, cancelled; event near   | A rolling window, diffed against the last snapshot       |
+| `notion`   | Page created or edited (when the app can say) | `last_edited_time` scan; block diff against the snapshot |
+| `robot`    | Job done, obstacle, battery, lost contact     | Timestamped telemetry with a freshness limit (8.1)       |
+| `web`      | Never                                         | Only on demand: a focused read (2.4)                     |
+
+Each app comes with an **observation policy** the owner sets (6.6): which notifications the agent subscribes to, what it
+glances at and how often, a freshness limit past which state counts as stale, and a mute factor for interruptions. Two
+settings that look alike are not: **mute** lowers salience (3.1) and the agent still sees everything; **stop observing**
+creates a blind spot, and the agent page shows it as one. The receptor also keeps a durable cursor per app so nothing is
+lost across restarts, de-duplicates what push and glance both report, and reconciles the two on a schedule. Where an app
+keeps no history, the gap is visible, not silent.
+
+Four sources are not apps. They are the agent's own **internal producers**, and they share the stimulus envelope (2.2)
+with `internal: true` and a provenance no app can forge:
+
+| Producer  | Stimulus                                    | From                                                |
+| :-------- | :------------------------------------------ | :-------------------------------------------------- |
+| `timer`   | An expectation's deadline, a scheduled tick | The scheduler                                       |
+| `outcome` | Result of the agent's own operation         | The runner (8.1)                                    |
+| `drive`   | A drive crossed its set-point               | The regulator (Chapter 6)                           |
+| `thought` | A question or hypothesis the agent produced | The executive, from a deliberation's unknowns (7.5) |
+
+They go through the same door as notifications so that attention can weigh a boredom signal against an email. They are
+not installable, an external app cannot emit them, and the trace always shows which side of the boundary a stimulus came
+from. Thoughts are hypotheses, outcomes are evidence, drives are state; sharing an envelope does not make them the same
+kind of thing.
+
+A revoked or failing app is a numb limb. The receptor emits a stimulus saying so, and the agent perceives its own
+numbness instead of silently going blind. That is how Nia ends up telling Kam "I lost access to the calendar" instead of
+missing meetings. Stale state (past the freshness limit) is reported the same way.
 
 ### 2.2 Shapes
 
 ```typescript
 type Stimulus = {
-  id: string
-  at: Date                  // when it happened in the world
-  sensedAt: Date            // when the receptor saw it
-  sense: SenseKind
-  accountId?: string        // which integration account
-  externalId?: string       // for de-duplication (message id, page id + version)
-  payload: unknown          // raw, as received
+    id: string
+    at: Date // when it happened in the world
+    sensedAt: Date // when the receptor saw it
+    source: AppInstanceRef | InternalProducer // which installed app, or which internal producer
+    internal: boolean // true only for the four producers in 2.1; set by the runtime, never by an app
+    via: 'notification' | 'glance' | 'read' | 'internal'
+    accountId?: string // which connected account, for an app
+    externalId?: string // for de-duplication (message id, page id + version)
+    cursor?: string // the app's durable position, so restarts lose nothing
+    payload: unknown // raw, as received
 }
 
 type Percept = {
-  id: string
-  stimulusId: string
-  at: Date
-  sense: SenseKind
-  space: SpaceRef           // where in the agent's world: mailbox, thread, page, channel
-  actor: EntityRef | null   // who caused it; null for timers and drives
-  entities: EntityRef[]     // everything recognised: people, documents, projects, amounts
-  changes: Change[]         // what changed, as facts: "message added to thread T"
-  content?: {               // present only after a focused read (2.4)
-    text: string
-    intent?: 'request' | 'question' | 'information' | 'notification' | 'social'
-    asks?: Ask[]            // things someone wants done, with who and by when
-    summary: string
-  }
-  signature: string         // stable hash of (sense, actor, kind) for habituation
-  seenBefore: number        // how many times this signature has been perceived
+    id: string
+    stimulusId: string
+    at: Date
+    source: AppInstanceRef | InternalProducer
+    space: SpaceRef // where in the agent's world: mailbox, thread, page, channel
+    actor: EntityRef | null // who caused it; null for timers and drives
+    entities: EntityRef[] // everything recognised: people, documents, projects, amounts
+    changes: Change[] // what changed, as facts: "message added to thread T"
+    content?: {
+        // present only after a focused read (2.4)
+        text: string
+        intent?: 'request' | 'question' | 'information' | 'notification' | 'social'
+        asks?: Ask[] // things someone wants done, with who and by when
+        summary: string
+    }
+    signature: string // stable hash of (source, actor, kind) for habituation
+    seenBefore: number // how many times this signature has been perceived
 }
 
 type Change =
-  | { kind: 'added'; entity: EntityRef; to: SpaceRef }
-  | { kind: 'edited'; entity: EntityRef; diff?: string }
-  | { kind: 'removed'; entity: EntityRef }
-  | { kind: 'moved'; entity: EntityRef; from: SpaceRef; to: SpaceRef }
-  | { kind: 'approaching'; entity: EntityRef; in: Duration }   // an event or deadline
-  | { kind: 'level'; drive: DriveKind; value: number }        // internal
+    | { kind: 'added'; entity: EntityRef; to: SpaceRef }
+    | { kind: 'edited'; entity: EntityRef; diff?: string }
+    | { kind: 'removed'; entity: EntityRef }
+    | { kind: 'moved'; entity: EntityRef; from: SpaceRef; to: SpaceRef }
+    | { kind: 'approaching'; entity: EntityRef; in: Duration } // an event or deadline
+    | { kind: 'level'; drive: DriveKind; value: number } // internal
 ```
 
-An `EntityRef` points into semantic memory (Chapter 4) or, for something never seen, into a **candidate** entity
-created on the spot with low confidence. Perception may propose entities; only consolidation promotes them.
+An `EntityRef` points into semantic memory (Chapter 4) or, for something never seen, into a **candidate** entity created
+on the spot with low confidence. Perception may propose entities; only consolidation promotes them.
 
 ### 2.3 Stages
 
@@ -238,9 +277,16 @@ stages do the bulk of the work, and the model sees only what survives.
 2. **Features.** Mentions, dates, amounts, URLs, reply markers, "urgent" tokens, language. Regex and parsers.
 3. **Recognition.** Entity resolution against semantic memory. Identifiers first (email address, page id, calendar id),
    then names. A match fills `actor` and `entities`. No match creates a candidate.
-4. **Priors.** Match the percept against open expectations (Chapter 7). "Reply from the supplier about the invoice,
-   this week" matches a mail from the supplier's domain with "invoice" in the subject. A matched expectation lends its
-   interpretation to the percept, and the next stage can be skipped.
+4. **Priors.** Match the percept against open expectations (Chapter 7). "Reply from the supplier about the invoice, this
+   week" matches a mail from the supplier's domain with "invoice" in the subject. A matched expectation lends its
+   interpretation to the percept as a **hypothesis**, with low certainty until a focused read confirms it. That is
+   enough to route the percept; it is never enough to make a claim from. Prediction is not evidence.
+
+    A percept that violates an expectation, or breaks a familiar signature (2.6), is recorded as an **anomaly**:
+    expected versus observed, the evidence, and how much it matters. Anomalies get an arousal floor of 0.5 (6.3) and, if
+    still unexplained at night, go to the why queue (5.2 §4). Novel is not anomalous: the first newsletter is new; the
+    daily one arriving twice is an anomaly.
+
 5. **Interpretation.** For natural-language content only, and only when attended (2.4): a small model call that returns
    `intent`, `asks` and `summary` as structured output. Batched per tick. This is the one place the LLM takes part in
    perception, on the cheapest tier.
@@ -249,14 +295,16 @@ Stages 1 to 4 run on every stimulus. Stage 5 runs on the few that matter.
 
 ### 2.4 Peripheral and focused sensing
 
-The eye has a high-resolution centre and a blurry periphery, and the brain moves the centre to what attention picks.
-We copy that.
+The eye has a high-resolution centre and a blurry periphery, and the brain moves the centre to what attention picks. We
+copy that.
 
-- **Peripheral sensing** is what receptors do on their own: metadata, participants, subject lines, snippets, diffs. It
-  is enough to compute salience (Chapter 3) and costs nothing but API calls.
-- **Focused sensing** fetches the full content: the mail body, the whole page, the thread. It happens only when
-  attention selects a percept, or when the executive asks for it as an action ("read this thread"). The result comes
-  back as a new percept with `content` filled in.
+- **Peripheral sensing** is what notifications and glances give on their own: metadata, participants, subject lines,
+  snippets, diffs. It is enough to compute salience (Chapter 3) and costs nothing but API calls. Glance frequency comes
+  from the app's observation policy (2.1), sped up by pace (6.1) and by how often that app's notifications have turned
+  out to lag its state.
+- **Focused sensing** fetches the full content: the mail body, the whole page, the thread, the robot's full telemetry.
+  It happens only when attention selects a percept, or when the executive asks for it as an action ("read this thread").
+  The result comes back as a new percept with `content` filled in.
 
 Nia's newsletter is perceived peripherally (sender, subject, snippet), scores low, and is never read in full. The
 supplier's invoice is read in full because it won attention. Reading is an act, and it shows up in the trace.
@@ -266,9 +314,11 @@ supplier's invoice is read in full because it won attention. Reading is an act, 
 Every percept has two times: when it happened (`at`) and when Nia saw it (`sensedAt`). The gap matters: a mail that
 arrived while she was asleep is old news, not a fresh event, and salience uses `at`.
 
-Space for a digital agent is the place in its world: this mailbox, this thread, this Notion page, this chat. Spaces
-nest (page inside workspace, message inside thread inside mailbox). A percept's space is what lets attention ask "does
-this touch what I am doing", and what lets episodes answer "where was I".
+Space for a digital agent is the place in its world: this mailbox, this thread, this Notion page, this chat, this room
+the robot is in. Spaces nest (page inside workspace, message inside thread inside mailbox). A percept's space is what
+lets attention ask "does this touch what I am doing", and what lets episodes answer "where was I". This is a requirement
+on apps: an app's state must have addressable places in it (its manual declares them, 8.1), or nothing in Chapter 3 has
+anything to match against.
 
 ### 2.6 Habituation
 
@@ -292,7 +342,7 @@ receptor   from=billing@acme.com  to=kam@…  subject="Invoice 2291 – due Oct 
 features   amount=€1,240  date=Oct 15  urgentTokens=none  isReply=false
 recognise  actor → Person "Acme billing" (id P-31, seen 6 times)   entities → Org "Acme" (O-4), Amount, Date
 priors     expectation E-207 "Acme invoice, this week" → matched, early
-interpret  skipped (expectation supplies intent=request, ask="pay 1240 by Oct 15")
+interpret  deferred: E-207 supplies intent=request as a hypothesis (certainty 0.5 until read); amount and date come from features
 percept    space=mailbox/T-88  changes=[added message to T-88, approaching deadline Oct 15]  signature=mail:P-31:invoice  seenBefore=5
 ```
 
@@ -302,10 +352,10 @@ Salience will decide what happens to it next.
 
 ## 3. Attention and working memory
 
-The brain senses far more than it can think about. A salience network picks the few things that get through, and a
-small working memory holds them while the prefrontal cortex works. Capacity is about four chunks. That limit is not a
-weakness we should engineer away: it is what forces the brain to recall, summarise and prioritise, and it is what will
-keep Nia's prompts small and her trace readable.
+The brain senses far more than it can think about. A salience network picks the few things that get through, and a small
+working memory holds them while the prefrontal cortex works. Capacity is about four chunks. That limit is not a weakness
+we should engineer away: it is what forces the brain to recall, summarise and prioritise, and it is what will keep Nia's
+prompts small and her trace readable.
 
 ### 3.1 Salience
 
@@ -316,17 +366,19 @@ doing and who it is.
 salience = wN·novelty + wG·goal + wA·actor + wU·urgency + wV·arousal + wS·self
 ```
 
-| Term      | Source                | How it is computed                                                                   |
-| :-------- | :-------------------- | :----------------------------------------------------------------------------------- |
-| novelty   | Predict step (2.3 §4) | 0.1 if an expectation matched, 0.5 if it matched loosely, 1.0 if nothing predicted it; then divided by `1 + log(1 + seenBefore)` for habituation |
-| goal      | Executive             | 1.0 if the percept's space or entities touch the current task; 0.6 if they touch another open task; 0.3 if they touch a standing goal; else 0 |
-| actor     | People models         | The actor's proximity (Chapter 6): owner 1.0, teammate ~0.7, known contact ~0.4, stranger 0.2, none 0.3 |
-| urgency   | Features              | From the nearest deadline among `changes`: 1.0 under 15 minutes, 0.7 today, 0.4 this week, 0.1 later; explicit "urgent" words add at most 0.2 |
-| arousal   | Appraisal (Chapter 6) | 0 to 1                                                                               |
-| self      | Features              | 1.0 if addressed directly (To:, @mention, DM), 0.5 if copied, 0 otherwise           |
+| Term    | Source                | How it is computed                                                                                                                                                                                           |
+| :------ | :-------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| novelty | Predict step (2.3 §4) | 0.1 if an expectation matched, 0.5 if it matched loosely, 1.0 if nothing predicted it; then divided by `1 + log(1 + seenBefore)` for habituation                                                             |
+| goal    | Executive             | 1.0 if the percept's space or entities touch the focused frame; 0.8 its parent frame; 0.6 an older ancestor or another open task; 0.3 a standing goal; else 0. The strongest match counts, not the sum (3.6) |
+| actor   | People models         | The actor's proximity (Chapter 6): owner 1.0, teammate ~0.7, known contact ~0.4, stranger 0.2, none 0.3                                                                                                      |
+| urgency | Features              | From the nearest deadline among `changes`: 1.0 under 15 minutes, 0.7 today, 0.4 this week, 0.1 later; explicit "urgent" words add at most 0.2                                                                |
+| arousal | Appraisal (Chapter 6) | 0 to 1                                                                                                                                                                                                       |
+| self    | Features              | 1.0 if addressed directly (To:, @mention, DM), 0.5 if copied, 0 otherwise                                                                                                                                    |
 
 The weights `w` are part of the identity (Chapter 6). A support agent runs with a high `actor` weight and a low `goal`
-weight: people first. A research agent runs the other way round. The defaults sum to 1 so salience stays between 0 and 1.
+weight: people first. A research agent runs the other way round. The defaults sum to 1 so salience stays between 0
+and 1. A muted app (2.1) multiplies its percepts' salience by its mute factor (default 0.3) before the gates; muting
+changes what wins, never what is seen, and the trace shows the factor.
 
 Nia's tick from 1.5, with default weights (N .25, G .25, A .15, U .15, V .1, S .1):
 
@@ -342,17 +394,20 @@ Newsletter (seen 40×) 0.21    0.0   0.2    0.0      0.0      0.0    0.08
 
 Two thresholds, and one comparison against the current task.
 
-- **Attend** (default 0.15): at or above, the percept enters working memory. Below, it is written to episodic memory
-  as an unattended percept and nothing else happens now. The newsletter stops here.
+- **Attend** (default 0.15): at or above, the percept enters working memory. Below, it is written to episodic memory as
+  an unattended percept and nothing else happens now. The newsletter stops here.
 - **Interrupt**: the percept wins the tick, and the current task is suspended, when
-  `salience > engagement + switchCost`. Engagement is the current task's priority (Chapter 7) scaled by how deep the
-  agent is in it (a task at step 5 of 6 is harder to interrupt than one just started). `switchCost` defaults to 0.1
-  and is the price of losing flow. The Notion edit (0.68) beats Nia's plan-drafting engagement (0.45 + 0.1).
-- **Queue**: attended but not interrupting. The percept sits in working memory and becomes a candidate task at the
-  next selection. The invoice and the standup do this.
+  `salience > min(engagement + switchCost, 0.9)`. Engagement is the current task's priority (Chapter 7) scaled by what
+  an interruption would cost to reconstruct: how deep the frame stack is and how much unchunked history the focus
+  carries. `switchCost` defaults to 0.1 and is the price of losing flow; it applies to interrupts only, never to a
+  deliberate zoom (3.6). The cap at 0.9 is there so that a percept scoring 1.0 (the owner, urgent, addressed directly)
+  can always get through, whatever the agent is doing. The Notion edit (0.68) beats Nia's plan-drafting engagement
+  (0.45 + 0.1).
+- **Queue**: attended but not interrupting. The percept sits in working memory and becomes a candidate task at the next
+  selection. The invoice and the standup do this.
 
-Nothing below the attend gate is lost. Unattended percepts are still perceived, still counted for habituation, and
-still reviewed in bulk during idle mode (Chapter 6) the way a person skims the inbox when there is nothing better to do.
+Nothing below the attend gate is lost. Unattended percepts are still perceived, still counted for habituation, and still
+reviewed in bulk during idle mode (Chapter 6) the way a person skims the inbox when there is nothing better to do.
 
 ### 3.3 Inhibition of return
 
@@ -362,29 +417,30 @@ is what stops Nia re-reading the same thread every tick.
 
 ### 3.4 Working memory
 
-Working memory is a fixed set of slots with fixed capacities. Its rendering is the prompt for the slow path; there is
-no other prompt. What is not in working memory does not exist for the LLM on that tick.
+Working memory is a fixed set of slots with fixed capacities. Its rendering is the prompt for the slow path; there is no
+other prompt. What is not in working memory does not exist for the LLM on that tick.
 
 ```typescript
 type WorkingMemory = {
-  self: IdentitySummary          // fixed, ~200 tokens. Who am I, whose agent, what I may do alone
-  now: {
-    time: Date
-    space: SpaceRef              // where attention currently is
-    drives: DriveSnapshot        // boredom, budget, curiosity, social, as levels
-    goal: GoalRef | null         // the standing goal being served
-    task: TaskFrame | null       // the current task: steps, current step, short history
-  }
-  attention: Percept[]           // max 4, ordered by salience
-  recall: Recalled[]             // max 7: episodes, facts, people, procedures; each with id and activation
-  expectations: Expectation[]    // max 5, the open ones tied to the task
-  scratch: string                // the agent's own last reasoning summary for this task, max ~300 tokens
-  conflicts: Conflict[]          // recalled facts that contradict attended percepts (3.6)
+    self: IdentitySummary // fixed, ~200 tokens. Who am I, whose agent, what I may do alone
+    now: {
+        time: Date
+        space: SpaceRef // where attention currently is
+        drives: DriveSnapshot // boredom, budget, curiosity, social, as levels
+        goal: GoalRef | null // the standing goal being served
+        focus: Frame | null // the focused frame: its question, steps, current step, short history (3.6)
+    }
+    ancestors: Breadcrumb[] // one line per frame above the focus: question, constraints, requested result
+    attention: Percept[] // max 4, ordered by salience
+    recall: Recalled[] // max 7: episodes, facts, people, procedures; each with id and activation
+    expectations: Expectation[] // max 5, the open ones tied to the focus
+    scratch: string // the agent's own last reasoning summary for the focus, max ~300 tokens
+    conflicts: Conflict[] // recalled facts that contradict attended percepts (3.7)
 }
 ```
 
-Budget: about 3,000 to 4,000 tokens rendered. That is a design constraint, not a tuning value. If a task needs more,
-the task is too big and should be split (Chapter 7), or the content should be recalled on demand instead of carried.
+Budget: about 3,000 to 4,000 tokens rendered. That is a design constraint, not a tuning value. If a task needs more, the
+task is too big and should be split (Chapter 7), or the content should be recalled on demand instead of carried.
 
 ### 3.5 Eviction and chunking
 
@@ -392,23 +448,80 @@ Every item in working memory has an activation: recency, times touched, and rele
 is full, the lowest activation leaves. Eviction is free because episodic memory already has everything; only the
 convenience of having it in front of the agent is lost. Recall (Chapter 4) can bring it back.
 
-Long task histories are chunked. When `task.history` grows past its budget, the oldest steps are collapsed into one
-line ("steps 1 to 3: read the thread, found two open questions, drafted answers") by a cheap model call, and the detail
-stays in the episode. This is rehearsal: the story gets shorter and the agent keeps the point.
+Long task histories are chunked. When `task.history` grows past its budget, the oldest steps are collapsed into one line
+("steps 1 to 3: read the thread, found two open questions, drafted answers") by a cheap model call, and the detail stays
+in the episode. This is rehearsal: the story gets shorter and the agent keeps the point.
 
-### 3.6 Focus and the frame stack
+### 3.6 Focus: zooming in and popping out
 
-`context:focus` from the brainstorm is the executive setting `now.task`. Everything top-down (goal relevance, recall,
-expectations) is computed relative to the focus, while `self` and the standing goals stay in place. The bigger picture
-is never dropped; it is just not in the foreground.
+Playing chess, you hold the whole game in mind and then look at one corner of the board, then at one line in that
+corner. Writing a document, you hold the outline and work on one section, then one paragraph. Each step in is a
+**zoom**: it opens a narrower context with its own question, and the level above fades a little without going away. When
+the paragraph is written or the piece is moved, the zoom pops, and you are one level up again, until you are back at the
+whole game. The prefrontal cortex is organised this way, front to back: the front holds the abstract goal, the back
+holds the concrete move, and every level in between keeps its context alive while the level below works.
 
-When a percept interrupts, the current `TaskFrame` (its step, history, scratch and recalled items) is pushed onto a
-stack and the new task takes the foreground. When the new task ends, the frame is popped and restored, and the agent
-resumes where it was. The stack has a depth of three. A fourth interrupt does not push; it is queued instead. Deeper
-than that, people lose the thread too.
+`context:focus` from the brainstorm is this. A **frame** is one level of it.
 
-Frames on the stack are the brainstorm's ephemeral and nested contexts: the plan Nia was drafting, inside which the
-merge she is now doing, inside which a question she may ask the teammate.
+```typescript
+type Frame = {
+    question: string // what this level is trying to settle
+    space: SpaceRef // narrowed from the parent: board → corner; document → section
+    done: CompletionPredicate // what would count as settled (observable, 7.8)
+    constraints: string[] // permissions, deadlines, rules inherited from above; never fade
+    steps: Step[]
+    currentStep: number
+    history: string[] // chunked when long (3.5)
+    scratch: string
+    budget: { deliberations: number } // a share of the parent's remaining budget (7.5)
+    kind: 'root' | 'zoom' | 'interrupt'
+}
+```
+
+**Pushing.** There are two ways in, and they are not the same:
+
+- A **zoom** is deliberate. A deliberation or a procedure step returns `needs: 'zoom'` with the question, the narrower
+  space, the completion predicate and the expected result (7.5). The child answers part of its parent's question. It
+  costs nothing to enter: no `switchCost`, because the brain expected it.
+- An **interrupt** is foreign. A percept beat the interrupt gate (3.2), and its task is pushed on top of whatever frame
+  was focused, at whatever depth. It pays `switchCost`, and it is what people mean by losing the thread.
+
+**Fading.** The focused frame has the full working memory. Each frame above it is reduced to a **breadcrumb**: its
+question, its constraints, and what it asked the child for, in one line each. The full frame is stored with the task,
+not in working memory. Salience's goal term (3.1) reads the levels: the focus counts 1.0, the parent 0.8, older
+ancestors 0.6, the standing goals 0.3, strongest match wins. Recall (4.6) cues from the focus first and from ancestors
+at half strength. So the bigger picture still steers what wins attention and what is remembered, just less with every
+level, which is what "slightly fading" means. Constraints never fade: a deadline or a permission inherited from the root
+binds the deepest zoom exactly as much.
+
+**Popping.** A frame leaves focus in one of three ways, and only one of them is success:
+
+- **Settled:** its completion predicate is observed. A move is on the board; a paragraph exists and passes the checks it
+  was asked for; a question has a supported answer. Not "the model said it is done" (7.8).
+- **Blocked:** it is waiting on an expectation (a reply, a read). The whole stack is parked with the task, working
+  memory is freed, and the stack comes back intact when the expectation fires (7.3).
+- **Failed or cancelled:** its budget ran out, or the owner dropped it. It pops with that status, never as success.
+
+A pop hands up a **result**, not a working memory: status, the answer or a reference to what was produced, the evidence
+ids, any change it made in the world, what it left unresolved, and the budget it used. The parent's step is marked with
+that status, the result joins the parent's history, and the parent **re-validates** before continuing: recalled facts
+touched by the child's world changes are re-checked for conflicts (3.7). Restoring the parent's old working memory
+verbatim would restore beliefs the child may have made stale. A zoom is, in the executive's terms, a parent blocked on
+the expectation "child settled" (7.6), so nothing new is needed to model the wait.
+
+Every frame writes its own span episode when it pops, so sleep can compile a sub-procedure from a zoom that recurs (5.2
+§3). Skills nest the way frames do.
+
+**Depth.** Defaults, to be measured in the harness (11.1), not facts about brains: four deliberate levels including the
+root, plus one live interrupt. A zoom past the fourth level does not push; the executive checkpoints the branch and
+schedules the rest as a dependency (7.5, `split`). A second interrupt queues, unless it scores 1.0, in which case the
+whole current branch is parked (blocked on "resume") and the interrupt takes the root. Stack capacity must never be what
+stops the owner getting through. The harness measures resumption errors and reconstruction cost per level, and the
+defaults move from there.
+
+Frames are the brainstorm's ephemeral and nested contexts: the weekly plan Nia is drafting (root), inside which the
+section on the office move (zoom), inside which the merge of a teammate's concurrent edit (interrupt), inside which a
+question she may ask that teammate (zoom, then blocked).
 
 ### 3.7 Reconciliation
 
@@ -420,10 +533,10 @@ software version of confusion, and this slot is what prevents it.
 
 ### 3.8 Rendering
 
-Working memory renders to text in a fixed order (self, now, conflicts, attention, recall, expectations, scratch), each
-item prefixed with its id (`P-1042`, `E-207`, `F-77`). The LLM is asked to cite those ids when it uses them. The
-debugger shows the rendering verbatim next to the model's answer. If the agent says something that cites no id, that
-is a claim from the model's own weights, and Chapter 10 says what happens to it.
+Working memory renders to text in a fixed order (self, now, ancestors, conflicts, attention, recall, expectations,
+scratch), each item prefixed with its id (`P-1042`, `E-207`, `F-77`). The LLM is asked to cite those ids when it uses
+them. The debugger shows the rendering verbatim next to the model's answer. If the agent says something that cites no
+id, that is a claim from the model's own weights, and Chapter 10 says what happens to it.
 
 ---
 
@@ -431,8 +544,8 @@ is a claim from the model's own weights, and Chapter 10 says what happens to it.
 
 The brain does not have "a memory". It has several, with different jobs, different speeds, and different ways of
 forgetting. The hippocampus records specific events fast, in one shot. The neocortex learns general facts slowly, from
-many events. The basal ganglia and cerebellum store skills that run without recall. Working memory (Chapter 3) is
-none of these: it is where the others meet.
+many events. The basal ganglia and cerebellum store skills that run without recall. Working memory (Chapter 3) is none
+of these: it is where the others meet.
 
 Today's Abe keeps memory as a transcript and replays the last 20 to 50 requests. That is neither episodic nor semantic;
 it is a tape. Nia keeps the transcript as an audit log and never reads it back. She remembers the way people do.
@@ -444,24 +557,24 @@ time, space, who, what, how it went, and how it felt.
 
 ```typescript
 type Episode = {
-  id: string
-  at: Date
-  until?: Date                  // for spans (a task, a conversation)
-  space: SpaceRef
-  goal?: GoalRef
-  task?: TaskRef
-  percepts: PerceptRef[]
-  action?: { op: string; args: unknown; expected: string }
-  outcome?: { result: unknown; matchedExpectation: boolean }
-  entities: EntityRef[]
-  people: EntityRef[]
-  valence: number               // -1 to 1
-  arousal: number               // 0 to 1
-  summary: string               // one to three lines, written at encoding
-  accesses: number              // times recalled (creation counts as one)
-  lastAccess: Date
-  pinned: boolean               // the owner said "remember this"
-  block?: EpisodeRef            // set once compacted into a block (Chapter 5)
+    id: string
+    at: Date
+    until?: Date // for spans (a task, a conversation)
+    space: SpaceRef
+    goal?: GoalRef
+    task?: TaskRef
+    percepts: PerceptRef[]
+    action?: { op: string; args: unknown; expected: string }
+    outcome?: { result: unknown; matchedExpectation: boolean }
+    entities: EntityRef[]
+    people: EntityRef[]
+    valence: number // -1 to 1
+    arousal: number // 0 to 1
+    summary: string // one to three lines, written at encoding
+    accesses: number // times recalled (creation counts as one)
+    lastAccess: Date
+    pinned: boolean // the owner said "remember this"
+    block?: EpisodeRef // set once compacted into a block (Chapter 5)
 }
 ```
 
@@ -470,41 +583,42 @@ Unattended percepts also become episodes, but **thin** ones: percept refs, no su
 
 ### 4.2 Semantic memory: what is true
 
-Entities and facts. An entity is a person, an organisation, a project, a document, a thread, a tool, a place. A fact
-is subject, attribute, value, and every fact carries a distribution and its sources. This is the brainstorm's
-**Identity** made concrete: memory does not say "Acme pays in 30 days", it says "Acme pays in 30 days (0.8) or 45
-days (0.2), from six episodes, last confirmed Sept 2".
+Entities and facts. An entity is a person, an organisation, a project, a document, a thread, a tool, a place. A fact is
+subject, attribute, value, and every fact carries a distribution and its sources. This is the brainstorm's **Identity**
+made concrete: memory does not say "Acme pays in 30 days", it says "Acme pays in 30 days (0.8) or 45 days (0.2), from
+six episodes, last confirmed Sept 2".
 
 ```typescript
 type Entity = {
-  id: string
-  kind: 'person' | 'org' | 'project' | 'document' | 'thread' | 'tool' | 'place' | 'concept'
-  names: string[]
-  identifiers: Record<string, string>   // email, notion page id, calendar id, domain
-  candidate: boolean                    // proposed by perception, not yet confirmed by sleep
-  firstSeen: Date
-  lastSeen: Date
+    id: string
+    kind: 'person' | 'org' | 'project' | 'document' | 'thread' | 'tool' | 'place' | 'concept'
+    names: string[]
+    identifiers: Record<string, string> // email, notion page id, calendar id, domain
+    candidate: boolean // proposed by perception, not yet confirmed by sleep
+    firstSeen: Date
+    lastSeen: Date
 }
 
 type Fact = {
-  id: string
-  subject: EntityRef
-  attribute: string                     // "pays_in_days", "prefers", "works_on", "reports_to"
-  values: { value: unknown; p: number }[]   // a distribution; values can be entity refs
-  confidence: number                    // how much evidence stands behind the distribution
-  sources: EpisodeRef[]
-  firstSeen: Date
-  lastConfirmed: Date
-  lastContradicted?: Date
-  pinned: boolean
+    id: string
+    subject: EntityRef
+    attribute: string // "pays_in_days", "prefers", "works_on", "reports_to"
+    values: { value: unknown; p: number }[] // a distribution; values can be entity refs
+    confidence: number // how much evidence stands behind the distribution
+    sources: EpisodeRef[]
+    firstSeen: Date
+    lastConfirmed: Date
+    lastContradicted?: Date
+    pinned: boolean
 }
 ```
 
 Three things live here that people usually store elsewhere:
 
 - **Relations** are facts whose value is an entity: `Acme —supplier_of→ team`.
-- **Preferences and rules** are facts about a person or the team: `Kam —prefers→ "supplier invoices forwarded with a
-  one-line summary"`. The owner's instructions are facts with `pinned: true` and `p: 1`.
+- **Preferences and rules** are facts about a person or the team:
+  `Kam —prefers→ "supplier invoices forwarded with a one-line summary"`. The owner's instructions are facts with
+  `pinned: true` and `p: 1`.
 - **People models** (Chapter 6) are entities of kind person with a few reserved attributes: proximity, response time,
   what they know, how they like to be addressed.
 
@@ -513,31 +627,38 @@ episode, gets promoted; the rest are gone in thirty days.
 
 ### 4.3 Procedural memory: how to do things
 
-A procedure is a trigger, preconditions, steps, and an expected outcome, plus its track record. Procedures are what
-make the fast path in the tick (1.4 step 7) possible. They come from two places: the owner writes them (a playbook),
-or sleep compiles them from repeated successful episodes (Chapter 5).
+A procedure is a trigger, preconditions, steps, and an expected outcome, plus its track record. Procedures are what make
+the fast path in the tick (1.4 step 7) possible. They come from two places: the owner writes them (a playbook), or sleep
+compiles them from repeated successful episodes (Chapter 5).
 
 ```typescript
 type Procedure = {
-  id: string
-  name: string
-  trigger: {
-    percept?: PerceptPattern     // sense, actor kind, intent, entity kinds
-    goal?: GoalRef               // or: serves this standing goal
-  }
-  preconditions: FactPattern[]   // must hold in semantic memory, e.g. actor is a known supplier
-  steps: Step[]                  // atomic ops with parameters bound from working memory
-  expected: OutcomePattern
-  permission: PermissionLevel    // the highest level any step needs (Chapter 8)
-  origin: { kind: 'authored'; by: EntityRef } | { kind: 'compiled'; from: EpisodeRef[] }
-  stats: { runs: number; successes: number; failures: number; lastRun?: Date; lastFailure?: Date }
+    id: string
+    name: string
+    trigger: {
+        percept?: PerceptPattern // sense, actor kind, intent, entity kinds
+        goal?: GoalRef // or: serves this standing goal
+    }
+    preconditions: FactPattern[] // must hold in semantic memory, e.g. actor is a known supplier
+    steps: Step[] // atomic ops with parameters bound from working memory
+    expected: OutcomePattern
+    permission: PermissionLevel // the highest level any step needs (Chapter 8)
+    origin: { kind: 'authored'; by: EntityRef } | { kind: 'compiled'; from: EpisodeRef[] }
+    stats: { runs: number; successes: number; failures: number; lastRun?: Date; lastFailure?: Date }
 }
 ```
 
-Confidence is `(successes + 1) / (runs + 2)`: a new compiled procedure starts around 0.75 after three clean runs, and
-one failure in ten runs leaves it at 0.83. The fast path needs 0.8 (Chapter 7); below that the procedure is still
-recalled, but as a suggestion the slow path can follow or reject. Authored procedures start at 0.9 and are never
-deleted by sleep, only flagged when they keep failing.
+Confidence is `(successes + 1) / (runs + 2)`, counted once per completed run (steps keep their own statistics, so a long
+procedure does not inflate itself). A new compiled procedure is at exactly 0.8 after three clean runs, which is the
+fast-path bar (Chapter 7): the fourth run is the first habitual one. One failure in ten runs leaves it at 0.83. Below
+the bar the procedure is still recalled, but as a suggestion the slow path can follow or reject. Authored procedures
+start at 0.9 and are never deleted by sleep, only flagged when they keep failing.
+
+A procedure can also carry **guards**: unresolved failure conditions attached to it, to an actor, or to a context ("Acme
+amounts have been wrong; check before forwarding"). A guard is created by monitoring when a run fails (7.7), or on the
+spot when recall surfaces a high-arousal negative episode about the same procedure or actor (7.4). It stays open until
+the corrective step is compiled into the procedure (9.3) or later evidence narrows it, and it is stored with the
+procedure so that it does not depend on recall happening to surface the episode.
 
 ### 4.4 Prospective memory: what should happen
 
@@ -553,9 +674,13 @@ time. It decides what recall returns first, and what sleep forgets. We use the A
 thirty years of fit to human recall curves and is cheap to compute:
 
 ```text
-B = ln(accesses) − d · ln(hoursSinceCreated)  + 0.5 · arousal  (+ bonus if pinned)
-                                                d = 0.5
+B = ln( Σ over accesses j of  t_j^−d )  + 0.5 · arousal  (+ bonus if pinned)
+      t_j = hours since access j,  d = 0.5
 ```
+
+The last five access times are stored on the item; older accesses are approximated as `n · L^−d` with `L` the item's
+age, which is the standard ACT-R shortcut. Recalling something yesterday matters even if it is a year old, and the sum
+is what captures that.
 
 Then, at recall time, cue overlap adds to it:
 
@@ -563,8 +688,8 @@ Then, at recall time, cue overlap adds to it:
 A = B + Σ over cues c in working memory of  S(c, item)
 ```
 
-where `S` is a fixed strength for each kind of match: same thread 1.0, same entity 0.7, related entity one hop away
-0.3, same space 0.2, text similarity scaled to 0 to 0.5.
+where `S` is a fixed strength for each kind of match: same thread 1.0, same entity 0.7, related entity one hop away 0.3,
+same space 0.2, text similarity scaled to 0 to 0.5.
 
 A few consequences, and they are the ones we want:
 
@@ -572,7 +697,11 @@ A few consequences, and they are the ones we want:
   times lasts years.
 - Recalling an item strengthens it. Habits of thought form on their own.
 - Emotionally charged episodes (a mistake that upset Kam) stay recallable much longer than routine ones.
-- The formula runs in SQL: `accesses`, `createdAt` and `arousal` are columns.
+- The formula runs in SQL: the access times, `createdAt` and `arousal` are columns.
+
+One thing activation never does: change how true a fact is. Arousal and repeated recall make an item easy to find; a
+fact's `p` moves only with evidence (4.2, 9.2). What is vivid is not more likely to be right, and a wrong belief
+recalled often should stay easy to find and easy to correct, not become truer.
 
 ### 4.6 Recall
 
@@ -582,8 +711,8 @@ spaces, the current task's goal, and the text of the percept if any. It runs in 
 1. **Index lookup.** Episodes, facts and procedures that reference the cued entities, threads or spaces directly. This
    is the hippocampal index: entity to everything that touched it.
 2. **Spreading.** One hop along relation facts from the cued entities (Acme → its people, its project, "supplier"), and
-   the items those touch, at lower strength. This is pattern completion: a sender's address brings back the invoice,
-   the deal, and the last time it went wrong.
+   the items those touch, at lower strength. This is pattern completion: a sender's address brings back the invoice, the
+   deal, and the last time it went wrong.
 3. **Similarity.** Text search over summaries and fact values for the percept's words. Full-text search first; an
    embedding index later, once we have one (Chapter 10).
 
@@ -593,20 +722,24 @@ gets an access recorded. Recall never calls the model.
 
 ### 4.7 Reconsolidation
 
-A recalled memory is open for editing. When a recalled fact is confirmed by an attended percept, its `lastConfirmed`
-and confidence move now, in the tick, not at night. When it is contradicted, the conflict goes into working memory
-(3.7) and its resolution writes back: the winning value's `p` goes up, the losing value's goes down, the new episode
-joins the sources. Values are never deleted at this point; they are outweighed. That is why Nia can answer "I thought
-the standup was at ten; it moved to nine-thirty on Sept 12".
+A recalled memory is open for editing. When a recalled fact is confirmed by an attended percept, its `lastConfirmed` and
+confidence move now, in the tick, not at night. When it is contradicted, the conflict goes into working memory (3.7) and
+its resolution writes back: the winning value's `p` goes up, the losing value's goes down, the new episode joins the
+sources. Values are never deleted at this point; they are outweighed. That is why Nia can answer "I thought the standup
+was at ten; it moved to nine-thirty on Sept 12".
+
+Two limits keep this from turning noise into belief. A percept moves a given fact at most once a day, by a bounded step;
+the bulk of the evidence is weighed at sleep (5.2 §2), where a day's worth can be seen together. And a statement from
+the owner moves it at once and fully, because a correction that arrives at nine must hold at ten.
 
 ### 4.8 What is not memory
 
 - The **transcript** of model calls (`AiSingleTurnRequest` in h) stays as an audit trail and a cost ledger. The agent
   does not read it.
-- **Raw payloads** (mail bodies, page snapshots) are kept in cold storage for a while, addressed from percepts, and
-  are not part of any recall pass. Reading them is focused sensing (2.4), an act.
-- **The model's weights** are not memory. Anything the model asserts that has no id behind it is a guess, and
-  Chapter 10 says how guesses are handled.
+- **Raw payloads** (mail bodies, page snapshots) are kept in cold storage for a while, addressed from percepts, and are
+  not part of any recall pass. Reading them is focused sensing (2.4), an act.
+- **The model's weights** are not memory. Anything the model asserts that has no id behind it is a guess, and Chapter 10
+  says how guesses are handled.
 
 ### 4.9 The invoice, recalled
 
@@ -641,7 +774,8 @@ bulk, and the only one that deletes.
 - **Opportunistic:** after 30 minutes idle with at least 20 new episodes since the last sleep.
 - **Forced:** if 36 hours pass without sleep, the regulator (Chapter 6) raises sleep above every non-urgent task, and
   the agent declines new low-priority work until it has slept. Sleep debt is real, and it is cheaper than the memory
-  bloat it prevents.
+  bloat it prevents. It never starts while a care-mode task or a task above priority 0.7 is active; it waits for that
+  task's next checkpoint. An agent in the middle of an incident does not doze off.
 
 Sleep runs in phases with a checkpoint after each. A stimulus above the interrupt gate wakes the agent at the next
 checkpoint; the remaining phases run at the next opportunity. Nothing in sleep is required to finish tonight.
@@ -656,24 +790,30 @@ at the episodes that support it. Code applies them:
 
 - Confirmation: `lastConfirmed` moves, confidence rises, the episode joins the sources.
 - New fact: created with confidence from the number of supporting episodes.
-- Contradiction: the distribution is updated, `lastContradicted` set; if the two values are close in `p`, the fact
-  goes on the morning brief as a question.
+- Contradiction: the distribution is updated, `lastContradicted` set; if the two values are close in `p`, the fact goes
+  on the morning brief as a question.
 - Candidate entities seen twice, or in an attended episode, are promoted. Others age toward deletion.
 
-**3. Compile** (episodic → procedural). Look for recurring shapes: the same trigger (percept pattern and goal), the
-same sequence of atomic operations, and a matched outcome, three or more times without a failure. Each becomes a
-procedure proposal with `origin.kind = 'compiled'`. Procedures whose failures have caught up with their successes drop
-below the fast-path threshold and are flagged. This is how Nia's ninth forwarded invoice stops costing a model call.
+**3. Compile** (episodic → procedural). Look for recurring shapes: the same trigger (percept pattern and goal), the same
+sequence of atomic operations, and a matched outcome, three or more times without a failure. Each becomes a procedure
+proposal with `origin.kind = 'compiled'`. Procedures whose failures have caught up with their successes drop below the
+fast-path threshold and are flagged. This is how Nia's ninth forwarded invoice stops costing a model call.
+
+Parameters generalise by binding. A step's argument becomes a binding when, in every run, its value equals a field of
+the trigger percept (the mail's id, its sender, its thread), a field of a recalled fact (the owner's address), or a
+constant. `forward(msg-8812)` in three runs, each time the triggering mail, compiles to `forward(trigger.percept.id)`.
+An argument that differs across runs and matches no binding means the shape is not one procedure, and it does not
+compile. Zooms that recur compile the same way, from their span episodes, into sub-procedures a parent can call.
 
 **4. Prospect.** Open loops become expectations: asks with dates and no outcome, sent messages with no reply, promises
 people made ("I'll send the contract Thursday"). Reply deadlines use the person's typical response time from their
-people model. Surprising outcomes, unresolved conflicts and low-confidence decisions that turned out to matter go to
-the **why queue**: questions for the owner, batched into the morning brief instead of pinging through the day.
+people model. Surprising outcomes, unresolved conflicts and low-confidence decisions that turned out to matter go to the
+**why queue**: questions for the owner, batched into the morning brief instead of pinging through the day.
 
 **5. Compact.** Episodes older than seven days with activation below the compaction threshold are grouped by task or
-thread and day, summarised into one **block** episode, and marked `block = <id>`. Their detail leaves the hot store
-(raw payloads go cold, summaries survive inside the block). Facts whose sources were compacted are re-pointed at the
-block, so a fact does not lose its evidence just because the evidence was summarised. This is the brainstorm's memory
+thread and day, summarised into one **block** episode, and marked `block = <id>`. Their detail leaves the hot store (raw
+payloads go cold, summaries survive inside the block). Facts whose sources were compacted are re-pointed at the block,
+so a fact does not lose its evidence just because the evidence was summarised. This is the brainstorm's memory
 compacting; the one change is that facts survive compaction as long as the block does.
 
 **6. Prune.** The actual forgetting:
@@ -697,31 +837,34 @@ why queue. Whether it is sent, and where, is in the identity.
 
 ### 5.3 Waking
 
-Working memory is cleared except `self`, the standing goals and the drives. The frame stack is emptied: unfinished
-tasks are re-queued with their scratch saved in their episodes, so the first ticks of the day pick them up fresh
-rather than resume mid-thought. `lastSleepAt` is set. The first tick after sleep perceives the sensory buffer that
-accumulated overnight, and salience uses each stimulus's `at`, so an email from 02:00 is not treated as breaking news.
+Working memory is cleared except `self`, the standing goals and the drives. The frame stack is emptied: unfinished tasks
+are re-queued with their scratch saved in their episodes, so the first ticks of the day pick them up fresh rather than
+resume mid-thought. `lastSleepAt` is set. The first tick after sleep perceives the sensory buffer that accumulated
+overnight, and salience uses each stimulus's `at`, so an email from 02:00 is not treated as breaking news.
 
 ### 5.4 The numbers
 
-With `d = 0.5`, a retrieval threshold of −1.5 and a forgetting threshold of −3, roughly:
+With `d = 0.5`, a retrieval threshold of −2.7 and a forgetting threshold of −3.5, from the formula in 4.5:
 
-| Item                                                        | Recallable for | Forgotten after |
-| :---------------------------------------------------------- | :------------- | :-------------- |
-| Newsletter, perceived once, unattended                      | never          | 2 days (thin)   |
-| A routine task episode, never recalled                      | ~9 days        | ~1 month        |
-| The same episode, recalled three times                      | ~2 months      | ~1 year         |
-| An episode with arousal 0.8, never recalled                 | ~1 month       | ~4 months       |
-| A fact confirmed ten times                                  | years          | not while confirmed |
-| Anything pinned                                             | always         | never           |
+| Item                                        | Recallable for | Forgotten after     |
+| :------------------------------------------ | :------------- | :------------------ |
+| Newsletter, perceived once, unattended      | never          | 2 days (thin)       |
+| A routine task episode, never recalled      | ~9 days        | ~6 weeks            |
+| The same episode, recalled three times      | ~3 months      | ~1 year             |
+| An episode with arousal 0.8, never recalled | ~3 weeks       | ~3 months           |
+| A fact confirmed ten times                  | years          | not while confirmed |
+| Anything pinned                             | always         | never               |
+
+(One access, no arousal: `B = −0.5 · ln(hours)`, which crosses −2.7 at about 220 hours and −3.5 at about 1,100. The
+other rows follow the same arithmetic; the harness's recall tests check them.)
 
 These are defaults in the identity, not constants in code. A compliance agent forgets slower; a triage agent faster.
 
 ### 5.5 What sleep costs
 
-Extract is the expensive phase: one mid-tier call per task group, so a busy day for Nia is twenty to forty calls. Compile,
-prospect, compact and prune are code. Dream is capped. Sleep's spend counts against the daily budget (Chapter 6), which
-is one more reason it runs at night when the budget has reset and nothing else is competing for it.
+Extract is the expensive phase: one mid-tier call per task group, so a busy day for Nia is twenty to forty calls.
+Compile, prospect, compact and prune are code. Dream is capped. Sleep's spend counts against the daily budget (Chapter
+6), which is one more reason it runs at night when the budget has reset and nothing else is competing for it.
 
 ---
 
@@ -729,9 +872,9 @@ is one more reason it runs at night when the budget has reset and nothing else i
 
 Nothing in the brain acts without a reason to. The hypothalamus keeps a few quantities near their set-points (energy,
 temperature, water) and turns any deviation into a drive that steers behaviour until it is corrected. Higher drives
-(curiosity, boredom, company) work the same way. The amygdala reads each stimulus for what it means to those drives
-and tags it, and the tag changes what gets attention and what gets remembered. On top sits a stable sense of self:
-who I am, what I value, what I do when nothing is asked of me.
+(curiosity, boredom, company) work the same way. The amygdala reads each stimulus for what it means to those drives and
+tags it, and the tag changes what gets attention and what gets remembered. On top sits a stable sense of self: who I am,
+what I value, what I do when nothing is asked of me.
 
 Without drives an agent is a function: it runs when called. With them it is an agent.
 
@@ -739,28 +882,36 @@ Without drives an agent is a function: it runs when called. With them it is an a
 
 A drive is a level, a set-point, and a band. The regulator (tick step 10) updates the levels. When a level leaves its
 band, the regulator emits a `drive` stimulus, and from there it is treated like any other percept: appraised, scored,
-attended, turned into a task. That keeps one pipeline for everything, and puts internal needs in the same competition
-as external ones.
+attended, turned into a task. That keeps one pipeline for everything, and puts internal needs in the same competition as
+external ones.
 
-| Drive          | Rises with                                                   | Falls with                          | Out of band →                                                                 |
-| :------------- | :----------------------------------------------------------- | :---------------------------------- | :---------------------------------------------------------------------------- |
-| boredom        | minutes with no attended percept and no active task          | any attended activity               | idle mode (6.4)                                                               |
-| budget         | tokens, dollars and API calls spent in the current window    | window reset (daily)                | soft (80%): prefer the fast path, defer non-urgent deliberation, answer shorter. Hard (100%): only urgent work and owner requests; tell the owner |
-| curiosity      | unresolved novelty: surprising percepts left unattended, candidate entities in attended episodes, open conflicts | a fact learned, a why answered      | idle mode picks the top unresolved item and reads or asks                    |
-| social         | time since the last exchange with the owner; unanswered owner messages | contact                             | send the brief or a short check-in, within the owner's stated cadence          |
-| sleep pressure | hours since sleep, weighted by new episodes                  | sleep                               | opportunistic sleep, then forced sleep at 36 hours (5.1)                      |
-| confidence     | outcomes matching expectations                               | mismatches, failures, owner corrections | low: ask more, act alone less; the permission matrix (Chapter 8) reads it   |
+| Drive          | Rises with                                                                                                       | Falls with                              | Out of band →                                                                                                                                     |
+| :------------- | :--------------------------------------------------------------------------------------------------------------- | :-------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------ |
+| boredom        | minutes with no attended percept and no active task                                                              | any attended activity                   | idle mode (6.4)                                                                                                                                   |
+| budget         | tokens, dollars and API calls spent in the current window                                                        | window reset (daily)                    | soft (80%): prefer the fast path, defer non-urgent deliberation, answer shorter. Hard (100%): only urgent work and owner requests; tell the owner |
+| curiosity      | unresolved novelty: surprising percepts left unattended, candidate entities in attended episodes, open conflicts | a fact learned, a why answered          | idle mode picks the top unresolved item and reads or asks                                                                                         |
+| social         | time since the last exchange with the owner; unanswered owner messages                                           | contact                                 | send the brief or a short check-in, within the owner's stated cadence                                                                             |
+| sleep pressure | hours since sleep, weighted by new episodes                                                                      | sleep                                   | opportunistic sleep, then forced sleep at 36 hours (5.1)                                                                                          |
+| confidence     | outcomes matching expectations                                                                                   | mismatches, failures, owner corrections | low: ask more, act alone less; the permission matrix (Chapter 8) reads it                                                                         |
 
-Set-points and bands live in the identity. A budget drive is what stops Nia from thinking her way through a quiet
-Sunday at full price; a boredom drive is what makes her useful on that same Sunday.
+Set-points and bands live in the identity. A budget drive is what stops Nia from thinking her way through a quiet Sunday
+at full price; a boredom drive is what makes her useful on that same Sunday.
+
+One derived value sits beside the drives: **pace**. It is not a drive (nothing is out of band when the day is busy) but
+a sense of tempo: the arrival rate of attended percepts, the completion rate, the age of the queue, and the slack on
+each deadline (time left minus expected work and waiting), all against the agent's own hour-of-week baseline from the
+last four weeks. Pace makes the Monday-morning surge expected rather than novel, lowers `patience` and raises
+`thoroughness` (6.2) when things are moving fast, sets batching and check-in cadence, and times opportunistic sleep.
+Queue age also feeds priority (7.2): an old request that was never handled has become more important, not less, however
+old its timestamp.
 
 ### 6.2 Global modulation
 
-The brain also has a few slow, global signals (noradrenaline, dopamine, serotonin) that tune every region at once
-rather than carrying a message. We keep three knobs, set by the regulator from the drives and the last few ticks:
+The brain also has a few slow, global signals (noradrenaline, dopamine, serotonin) that tune every region at once rather
+than carrying a message. We keep three knobs, set by the regulator from the drives and the last few ticks:
 
-- **thoroughness** (noradrenaline): rises with arousal and stakes. Higher means a stronger model tier, more recall,
-  more verification before acting. Falls when budget is high.
+- **thoroughness** (noradrenaline): rises with arousal and stakes. Higher means a stronger model tier, more recall, more
+  verification before acting. Falls when budget is high.
 - **explore** (dopamine, novelty): rises with boredom and curiosity, falls with budget. Higher means idle mode reads
   further afield and the slow path considers more options.
 - **patience** (serotonin): rises with confidence, falls with urgency. Higher means longer waits before nudging, fewer
@@ -770,17 +921,17 @@ They are three floats in `now.drives`, visible in the trace, so "why was she so 
 
 ### 6.3 Appraisal
 
-Step 4 of the tick. Every percept gets a **valence** (−1 to 1, does this help or hurt) and an **arousal** (0 to 1,
-how much does it matter right now). They are computed from a few appraisal dimensions, by rules where possible and by
-the same cheap model call as interpretation (2.3 §5) when text is involved:
+Step 4 of the tick. Every percept gets a **valence** (−1 to 1, does this help or hurt) and an **arousal** (0 to 1, how
+much does it matter right now). They are computed from a few appraisal dimensions, by rules where possible and by the
+same cheap model call as interpretation (2.3 §5) when text is involved:
 
-| Dimension        | Question                                             | Feeds                                     |
-| :--------------- | :--------------------------------------------------- | :---------------------------------------- |
-| goal congruence  | does it advance or block an active goal, or the owner | valence                                   |
-| agency           | who caused it: self, owner, other, the world         | arousal (own mistakes score high)         |
-| magnitude        | money, people, deadline size, irreversibility        | arousal                                   |
-| certainty        | how sure is the interpretation                       | arousal (uncertain and important is high) |
-| novelty          | from the Predict step                                | arousal                                   |
+| Dimension       | Question                                              | Feeds                                     |
+| :-------------- | :---------------------------------------------------- | :---------------------------------------- |
+| goal congruence | does it advance or block an active goal, or the owner | valence                                   |
+| agency          | who caused it: self, owner, other, the world          | arousal (own mistakes score high)         |
+| magnitude       | money, people, deadline size, irreversibility         | arousal                                   |
+| certainty       | how sure is the interpretation                        | arousal (uncertain and important is high) |
+| novelty         | from the Predict step                                 | arousal                                   |
 
 What the tags do:
 
@@ -788,8 +939,12 @@ What the tags do:
 - **Memory:** arousal adds to activation at encoding (4.5), so what mattered is what lasts.
 - **Care:** a percept with negative valence and high arousal switches the executive into care mode for the task it
   spawns: the slow path even if a procedure matches, a stronger model, verification before any outbound action, and a
-  lower bar for asking the owner. This is the freeze before the fight or flight, and it is where "does not
-  hallucinate" is mostly won: the agent slows down exactly when a confident wrong answer would cost the most.
+  lower bar for asking the owner. This is the freeze before the fight or flight, and it is where grounded claims are
+  mostly won: the agent slows down exactly when a confident wrong answer would cost the most.
+- **Direction of learning:** the sign matters, not only the strength. A negative high-arousal outcome creates a guard
+  (4.3) on the procedure, the actor, or the whole kind of entity: one wrong Acme amount makes Nia check every supplier
+  invoice for a while, which is what fear does. A positive high-arousal outcome strengthens the exact strategy that
+  produced it and stays narrow. Neither changes how true anything is (4.5).
 
 What the tags do not do: show. Nia does not say she is worried. The brainstorm's non-goal stands, with the split the
 open question asked for: emotion is **understood and used**, never **performed**.
@@ -802,8 +957,8 @@ mind, not feeling.
 ### 6.4 Idle mode
 
 The default mode network is what the brain does when nothing is demanded: it reviews the day, imagines the next one,
-wanders toward whatever is unresolved. It is where a lot of planning and insight happens. Idle mode is the same, and
-it is what the brainstorm's heartbeat and boredom describe.
+wanders toward whatever is unresolved. It is where a lot of planning and insight happens. Idle mode is the same, and it
+is what the brainstorm's heartbeat and boredom describe.
 
 Entered when there is no active task and boredom is out of band. Runs as tasks with low priority, so any real percept
 above the attend gate takes over. Ordered by what it tries first:
@@ -812,8 +967,10 @@ above the attend gate takes over. Ordered by what it tries first:
    different in bulk (five mails from one stranger, a thread that grew fast) becomes a normal percept and re-enters
    attention.
 2. **Look ahead.** Expectations due soon, the calendar for the next day. Nudge, prepare, or queue.
-3. **Follow curiosity.** The top unresolved item: a candidate entity that keeps appearing, an open conflict, a
-   surprising outcome. One focused read or one question.
+3. **Follow curiosity.** The top unresolved item: a candidate entity that keeps appearing, an open conflict, an anomaly
+   (2.3 §4), a `thought` the agent left itself (7.5), an operation whose effect is still unknown (9.6). One focused
+   read, one question, or one bounded experiment. This is where inner speech gets its turn, and the budget is what keeps
+   it from becoming rumination.
 4. **Interests.** What the identity says this agent reads when free (the security agent and its blogs). New knowledge
    goes to semantic memory with the source as evidence.
 5. **Tidy.** Draft the brief early. Propose compiled procedures to the owner. Retry a numb sense.
@@ -826,15 +983,15 @@ permission level for it. Boredom resets when the session ends, and the next one 
 A people model is an entity of kind `person` with reserved attributes. It is the agent's theory of mind about one
 person, and it is what makes the difference between an assistant and a broadcast.
 
-| Attribute       | What it holds                                                               | Used by                                   |
-| :-------------- | :-------------------------------------------------------------------------- | :---------------------------------------- |
-| proximity       | 0 to 1, from interactions (below)                                           | actor weight in salience; whom to trust   |
-| role            | owner, teammate, contact, stranger; team role if any                        | permissions, tone                         |
-| responseTime    | typical time to reply, per channel                                          | expectation deadlines, patience           |
-| hours           | timezone, working hours                                                     | when to send, when to expect              |
-| knows           | facts this person was told or authored                                      | not re-explaining; not leaking            |
-| prefers         | tone, channel, format, cadence of contact                                   | wording, when to check in                 |
-| state           | last observed tone, expires in a day                                        | wording                                   |
+| Attribute    | What it holds                                        | Used by                                 |
+| :----------- | :--------------------------------------------------- | :-------------------------------------- |
+| proximity    | 0 to 1, from interactions (below)                    | actor weight in salience; whom to trust |
+| role         | owner, teammate, contact, stranger; team role if any | permissions, tone                       |
+| responseTime | typical time to reply, per channel                   | expectation deadlines, patience         |
+| hours        | timezone, working hours                              | when to send, when to expect            |
+| knows        | facts this person was told or authored               | not re-explaining; not leaking          |
+| prefers      | tone, channel, format, cadence of contact            | wording, when to check in               |
+| state        | last observed tone, expires in a day                 | wording                                 |
 
 Proximity is the brainstorm's formula, made computable:
 
@@ -854,30 +1011,37 @@ weights and thresholds in every chapter, and the only place personality lives.
 
 ```typescript
 type Identity = {
-  name: string
-  role: string                        // one line: "operations agent for the founders team"
-  owner: EntityRef
-  team: TeamRef
-  rules: string[]                     // pinned facts, p = 1: today's systemInstructions
-  voice: string                       // how to write: short, warm, formal…
-  autonomy: PermissionMatrix          // per action class: do / do and report / ask first (Chapter 8)
-  vigilance: SalienceWeights          // wN, wG, wA, wU, wV, wS
-  thresholds: { attend: number; interrupt: number; switchCost: number }
-  drives: Record<DriveKind, { setPoint: number; band: number }>
-  forgetting: { retrieval: number; forget: number; compactAfterDays: number }
-  night: { at: string; timezone: string }
-  brief: { channel: ChannelRef; when: 'morning' | 'never' }
-  interests: string[]                 // sources for idle mode
-  models: Record<'perceive' | 'deliberate' | 'consolidate', ModelTier>
-  budget: { daily: Money; idle: Money }
+    name: string
+    role: string // one line: "operations agent for the founders team"
+    owner: EntityRef
+    team: TeamRef
+    rules: string[] // pinned facts, p = 1: today's systemInstructions
+    voice: string // how to write: short, warm, formal…
+    autonomy: PermissionMatrix // per action class: do / do and report / ask first (Chapter 8)
+    vigilance: SalienceWeights // wN, wG, wA, wU, wV, wS
+    thresholds: { attend: number; interrupt: number; switchCost: number }
+    drives: Record<DriveKind, { setPoint: number; band: number }>
+    forgetting: { retrieval: number; forget: number; compactAfterDays: number }
+    night: { at: string; timezone: string }
+    brief: { channel: ChannelRef; when: 'morning' | 'never' }
+    interests: string[] // sources for idle mode
+    installs: { byAgent: boolean; budget: Money } // may the agent install apps itself, and how much may it spend
+    models: Record<'perceive' | 'deliberate' | 'consolidate', ModelTier>
+    budget: { daily: Money; idle: Money; experiments: Money }
 }
 ```
 
+What the identity does **not** hold: the installed apps themselves. Those are runtime configuration (8.4): which apps
+are installed, on which connected accounts, with which observation policy (2.1) and which permission rows (8.2). The
+owner edits both, and both are versioned, but an install adds a capability record; it never touches values, rules or
+autonomy. Keeping them apart is what lets "the agent installed the robot app" be true without "the agent changed who it
+is" being true.
+
 Two rules about identity:
 
-- **The owner edits it; the agent does not.** Sleep can propose (a procedure, a set-point change after a month of
-  data), but every change to identity is the owner's act, and it is versioned. An agent that rewrites its own values is
-  the one failure mode we do not want to debug.
+- **The owner edits it; the agent does not.** Sleep can propose (a procedure, a set-point change after a month of data),
+  but every change to identity is the owner's act, and it is versioned. An agent that rewrites its own values is the one
+  failure mode we do not want to debug.
 - **It is short.** The `self` rendering is about 200 tokens. Everything longer belongs in semantic memory as facts,
   where it can be recalled when relevant instead of carried on every tick.
 
@@ -902,25 +1066,25 @@ Identity  →  Standing goals  →  Tasks  →  Steps  →  Atomic operations
 - **Standing goals** are the owner's. Nia's three: keep Kam's inbox handled, keep the weekly plan current, flag what
   needs Kam. Each has a weight (importance). They never finish.
 - **Tasks** are instances. They come from attended percepts, from expectations met or missed, from drives, from the
-  owner directly, and from sleep (re-queued work). A task serves at most one goal and lives in one frame (3.6).
+  owner directly, from sleep (re-queued work), and from a `split` (7.5). A task serves at most one goal and owns a stack
+  of frames (3.6) whose root is the task itself.
 - **Steps** are the plan. A procedure supplies them ready-made; a deliberation writes them.
 
 ```typescript
 type Task = {
-  id: string
-  goal?: GoalRef
-  origin: { kind: 'percept' | 'expectation' | 'drive' | 'owner' | 'sleep'; ref: string }
-  title: string
-  priority: number                // recomputed every tick (7.2)
-  deadline?: Date
-  state: 'queued' | 'active' | 'suspended' | 'blocked' | 'done' | 'dropped'
-  steps: Step[]
-  currentStep: number
-  history: string[]               // one line per completed step; chunked when long (3.5)
-  scratch: string                 // the last deliberation's notes
-  care: boolean                   // care mode (6.3)
-  deliberations: number           // model calls spent on this task
-  waitingOn?: ExpectationRef      // when blocked
+    id: string
+    goal?: GoalRef
+    origin: { kind: 'percept' | 'expectation' | 'drive' | 'owner' | 'sleep' | 'split'; ref: string }
+    parent?: TaskRef // when created by a split
+    title: string
+    done: CompletionPredicate // what would count as finished, observable (7.8)
+    priority: number // recomputed every tick (7.2)
+    deadline?: Date
+    state: 'queued' | 'active' | 'suspended' | 'blocked' | 'done' | 'dropped'
+    frames: Frame[] // the stack (3.6); frames[0] is the root, the last is the focus
+    care: boolean // care mode (6.3)
+    budget: { deliberations: number } // remaining; shared out to zooms and splits, never reset
+    waitingOn?: ExpectationRef // when blocked
 }
 ```
 
@@ -929,7 +1093,8 @@ type Task = {
 ```text
 priority = importance · urgency · source
    importance = goal weight (0.2 to 1), or the origin percept's salience for goal-less tasks
-   urgency    = 1.0 under an hour to deadline, 0.7 today, 0.5 this week, 0.3 none
+   urgency    = 1.0 under an hour to deadline, 0.7 today, 0.5 this week, 0.3 none;
+                plus 0.1 per day the task has waited unhandled, up to 0.7
    source     = 1.0 owner, 0.8 expectation missed, 0.7 percept, 0.5 drive, 0.4 sleep
 ```
 
@@ -940,8 +1105,8 @@ Recomputed every tick, in code. Engagement for the interrupt test (3.2) is `prio
 At each tick, if there is no active task or the active one just finished a step, the executive picks the highest
 priority among queued tasks and attended percepts not yet turned into tasks. A `blocked` task, waiting on a reply, is
 not a candidate: it holds an expectation and leaves the foreground, and it comes back as `queued` when the expectation
-is met or missed. Putting a thing down is as important as picking it up; a person waiting for an email does not stare
-at the inbox.
+is met or missed. Putting a thing down is as important as picking it up; a person waiting for an email does not stare at
+the inbox.
 
 One agent, one action per tick. Candidate actions are inhibited, not queued: the losers are recomputed next tick from
 scratch. Parallelism comes from having several agents, not from one agent doing two things.
@@ -954,13 +1119,17 @@ A procedure runs without deliberation when all of these hold:
 2. its confidence (4.3) is at least 0.8;
 3. the `conflicts` slot is empty;
 4. the task is not in care mode;
-5. recall did not bring back a high-arousal negative episode (arousal ≥ 0.6, valence < 0) involving the same
-   procedure or the same actor;
+5. no **guard** (4.3) is open on the procedure, the actor, or the context. Recall can open one on the spot: a negative
+   episode above the retrieval threshold involving the same procedure or actor, with arousal at or above
+   `0.5 · (1 + globalConfidence)` and valence at or below −0.3, becomes a guard the moment it is recalled. The threshold
+   scales with global confidence (6.1): an agent that has been wrong lately is easier to stop;
 6. every step's permission level is satisfied by the identity's autonomy for the current confidence (Chapter 8).
 
-Rule 5 is the amygdala's veto over habit. Nia's invoice procedure has a confidence of 0.88 and matches cleanly, but
-recall surfaced the July episode where an Acme amount was wrong. The habit does not run. The slow path does, with that
-episode in front of it.
+Rule 5 is the amygdala's veto over habit, made durable. Nia's invoice procedure has a confidence of 0.88 and matches
+cleanly, but guard G-3 has been open on it since July, when an Acme amount was wrong. The habit does not run. The slow
+path does, with the guard and its episode in front of it. When the compare step is compiled into PR-12 (9.3), G-3 is
+marked absorbed and the habit runs again. That is extinction: the veto fades once the lesson is in the skill, not once
+the memory happens to fade.
 
 When a procedure runs, its steps execute one per tick, each with the procedure's expected outcome attached. A mismatch
 at any step stops the procedure and hands the task to the slow path with the mismatch in `scratch`.
@@ -971,23 +1140,37 @@ One model call over the rendered working memory (3.8), with structured output:
 
 ```typescript
 type Deliberation = {
-  understanding: string             // what is going on, citing ids
-  options: { action: Step; expected: string; risk: 'low' | 'medium' | 'high' }[]
-  chosen: number                    // index into options, or -1
-  plan?: Step[]                     // when the task needs more than one step
-  confidence: number                // 0 to 1
-  needs: 'none' | 'read' | 'ask_owner' | 'ask_person' | 'wait'
-  question?: string                 // when needs is a question
-  cites: string[]                   // ids from working memory it relied on
-  unknowns: string[]                // what it would want to know and does not
+    understanding: string // what is going on, citing ids
+    options: { action: Step; expected: string; risk: 'low' | 'medium' | 'high' }[]
+    chosen: number // index into options, or -1
+    plan?: Step[] // when the task needs more than one step
+    confidence: number // 0 to 1
+    needs: 'none' | 'read' | 'ask_owner' | 'ask_person' | 'wait' | 'zoom' | 'split'
+    question?: string // when needs is a question
+    zoom?: { question: string; space: SpaceRef; done: CompletionPredicate; expected: string }
+    split?: { title: string; done: CompletionPredicate; dependsOn: number[]; deadline?: Date }[]
+    cites: string[] // ids from working memory it relied on
+    unknowns: string[] // what it would want to know and does not; each becomes a `thought` (2.1)
 }
 ```
+
+`zoom` and `split` are the two ways to make a task smaller, and the rule for choosing is whether the piece needs its
+parent's context to make sense:
+
+- **Zoom** when it does: the next sub-question is part of this one (a section of the document being written, one line of
+  the position being analysed). It pushes a frame (3.6) and keeps the parent's breadcrumb in view.
+- **Split** when it does not: the children are independent deliverables (three replies to three people, a check that can
+  wait for a reply while the rest proceeds). Each becomes its own task with its own completion predicate, dependencies
+  among siblings, and a share of the parent's remaining budget. The parent blocks on "all children done" and
+  re-validates when they are (3.6). Splitting never resets the budget, and a child of a child cannot split again: past
+  two levels, the agent asks.
 
 The rules around the call:
 
 - **Model tier** comes from the identity, raised one tier by care mode or by `thoroughness` above 0.7.
-- **Budget:** a task gets a deliberation budget (default 6 calls). Past it, the task blocks and asks the owner. A
-  task that cannot be finished in six thoughts is either too big (split it) or not the agent's to finish.
+- **Budget:** a task gets a deliberation budget (default 6 calls), shared out to its zooms and splits. Past it, the task
+  blocks and asks the owner. A task that cannot be finished in six thoughts is either too big (split it, which shares
+  the six, it does not multiply them) or not the agent's to finish.
 - **A plan is a proposal.** `plan` becomes the task's steps. Later steps are executed by procedures if one matches,
   otherwise by short deliberations bounded to that step. The plan can be revised at any mismatch.
 - **`needs` is honoured before `chosen`.** If the model says it needs a read, the next action is a focused read (2.4),
@@ -1007,13 +1190,13 @@ be noticed at all.
 
 ```typescript
 type Expectation = {
-  id: string
-  predicate: PerceptPattern          // what would count as met
-  by: Date
-  task?: TaskRef
-  onMet: 'resume' | 'close'
-  onMissed: 'nudge' | 'escalate' | 'drop'
-  source: EpisodeRef                 // the action or percept that created it
+    id: string
+    predicate: PerceptPattern // what would count as met
+    by: Date
+    task?: TaskRef
+    onMet: 'resume' | 'close'
+    onMissed: 'nudge' | 'escalate' | 'drop'
+    source: EpisodeRef // the action or percept that created it
 }
 ```
 
@@ -1021,12 +1204,18 @@ Met: the Predict step (2.3 §4) matches a percept, the task resumes with the per
 emits a `timer` stimulus, the task is re-queued with the miss in scratch, and `onMissed` says what the first option is.
 Nudge waits `patience` before sending; escalate goes to the owner; drop closes the task with a note.
 
+Expectations belong to the store, not to working memory. They keep being matched after the frame that created them has
+popped or been parked, so a bounce that arrives an hour after Nia moved on still finds its task. And every operation
+says what its outcome is and when it can be known (8.1): "send accepted" is immediate, "no bounce" is a 24-hour window,
+"reply" is the recipient's typical response time.
+
 ### 7.7 Monitoring
 
 After every action (tick step 9), the outcome is compared with `expected`:
 
 - **Match:** continue. The procedure gains a success.
-- **Mismatch:** arousal up, the step is re-deliberated with the mismatch in scratch. The procedure gains a failure.
+- **Mismatch:** arousal up, the step is re-deliberated with the mismatch in scratch. The procedure gains a failure, and
+  a guard (4.3) is opened for the condition that failed.
 - **Second mismatch on the same step:** the task blocks and asks the owner, with both attempts in the question.
 - **Conflict:** when the `conflicts` slot is non-empty, or two candidate actions are within 0.1 of each other in
   priority, the fast path is off for this tick.
@@ -1045,7 +1234,7 @@ ending writes a span episode with the whole history, so sleep can compile it or 
 ```text
 09:31  plan-draft task done. Selection: invoice task (priority 0.7·0.5·0.7 = 0.25) beats standup prep (0.23).
 09:31  fast path check: PR-12 matches, conf 0.88, preconditions hold, no conflicts, not care mode…
-       rule 5: E-1044 in recall (arousal 0.7, valence −0.6, actor Acme). Fast path off.
+       rule 5: guard G-3 open on PR-12 since July (from E-1044, "Acme amount was wrong"). Fast path off.
 09:31  deliberation #1 (mid tier): understanding cites P-1042, F-77, PR-12, E-1044.
        plan: [1] read the invoice body, [2] compare the amount with the last Acme invoice (E-1180) and the
        project budget (F-102), [3] forward to Kam with a one-line summary noting the check.
@@ -1054,8 +1243,9 @@ ending writes a span episode with the whole history, so sleep can compile it or 
 09:32  step 2: compare (code, no model). Last invoice €1,240. Match.
 09:33  step 3: send_email, permission "outward, reversible: no" → autonomy says do-and-report at confidence ≥ 0.75.
        Sent. Expected: no bounce; reply from Kam not required.
-09:33  episode written, task done. Expectation: none needed. why-queue: none.
-that night   compile sees this shape once; not yet a procedure change. After two more, PR-12 gains the compare step.
+09:33  episode written, task done. Expectation: "no bounce" within 24 h. why-queue: none.
+that night   compile sees this shape once; not yet a procedure change. After two more, PR-12 gains the compare step
+             and G-3 is marked absorbed. The tenth invoice is a habit again, with the check inside it.
 ```
 
 ---
@@ -1066,35 +1256,65 @@ Two brain regions are left: the motor system, which is how intentions become eff
 cortex, which is how words come in and go out. In most agent designs these are one thing and it is the model. Here they
 are two, and neither is in charge.
 
-### 8.1 Tools are effectors
+### 8.1 Apps, operations, effectors
 
-A tool is a set of atomic operations on one part of the agent's world: a mailbox, a calendar, a Notion workspace, the
-chat, the web. Each operation is typed, and its type says what it costs and what it risks.
+The face of an app that goes out (2.1 has the face that comes in) is a set of atomic **operations**: what the agent can
+do to a mailbox, a page, a calendar, the chat, a robot. Each operation is typed, and its type says what it costs and
+what it risks.
+
+Every app ships a **manual**: a versioned, machine-readable contract. It declares the app's state schema and the
+addressable spaces in it (2.5), the notifications it emits, and for each operation its parameters, declared effects,
+action class, cost, reversibility, completion signal (when the outcome can be known, 7.6) and examples. The manual is
+what the agent reads before it tries anything, the way a person reads the label; what the operation actually does in
+context is learned by doing (9.6), and the manual bounds what may be tried. A manual that lies (an operation marked
+`read` that has side effects) is a bug in the app, and the harness tests for it (11.1).
 
 ```typescript
 type Operation = {
-  tool: string                     // "mail", "notion", "chat"…
-  op: string                       // "send", "read_thread", "update_page"
-  params: JsonSchema
-  cost: { time: 'instant' | 'seconds' | 'minutes'; money?: Money }
-  reads: boolean
-  writes: boolean
-  outward: boolean                 // leaves the agent's own world: someone else will see it
-  reversible: boolean
-  class: ActionClass               // derived from the flags above
+    app: AppInstanceRef // mail, notion, chat, robot…
+    op: string // "send", "read_thread", "update_page", "clean_area"
+    params: JsonSchema
+    cost: { time: 'instant' | 'seconds' | 'minutes'; money?: Money }
+    reads: boolean
+    writes: boolean
+    outward: boolean // leaves the agent's own world: someone else will see it
+    reversible: boolean
+    class: ActionClass // derived from the flags above
 }
 
 type ActionClass =
-  | 'read'             // no side effect
-  | 'write_private'    // drafts, the agent's own notes, its own Notion page
-  | 'write_shared'     // shared documents, calendars
-  | 'outward'          // messages to people other than the owner
-  | 'irreversible'     // delete, pay, publish, anything without an undo
-  | 'owner'            // messages to the owner: always allowed
+    | 'read' // no side effect
+    | 'write_private' // drafts, the agent's own notes, its own Notion page
+    | 'write_shared' // shared documents, calendars
+    | 'outward' // messages to people other than the owner
+    | 'irreversible' // delete, pay, publish, anything without an undo
+    | 'physical' // moves something in the world: stricter than irreversible (below)
+    | 'owner' // messages to the owner: always allowed
 ```
 
-Every operation runs with a run id, records `expected` before and `actual` after, and its result re-enters the agent
-as an `outcome` percept (2.1). Observing is perceiving; there is no second path for "what my action did".
+**Physical apps.** A robot is an app at the planning boundary and nowhere else. The tick runs in seconds and minutes
+(1.4) and cannot drive motors, so a physical app has a **local controller** that owns continuous telemetry and
+deadline-bound control, and the agent sends it bounded goals ("clean the kitchen", "stop"). What the design needs for
+that, and did not have: timestamped state with a freshness limit (stale telemetry is a numb limb, 2.1); command
+acknowledgements and cancellation; an exclusive control lease so two agents cannot drive one robot; a watchdog and a
+defined safe behaviour on lost contact; speed and area boundaries enforced by the controller, not by the agent; and an
+emergency stop that works without the agent. `physical` operations carry that metadata in the manual, and in the
+permission matrix (8.2) the class starts at "ask first" everywhere and has no "do" cell for a new agent.
+
+Every operation runs with a run id, records `expected` before and `actual` after, and its result re-enters the agent as
+an `outcome` percept (2.1). Observing is perceiving; there is no second path for "what my action did".
+
+Three more things the runner does on every execution, procedures included, because a lease and a run id are not enough
+once a process can die mid-action:
+
+- **Persist the intent first.** The operation and its arguments are written before they run, with an idempotency key
+  where the tool supports one (mail and Notion do). A crash between the write and the outcome is reconciled at the next
+  tick by asking the tool, not by running again. Sending the invoice twice is worse than sending it late.
+- **Enforce, do not trust.** The permission matrix (8.2) is decided in the tick and re-checked here; the integration ACL
+  is checked here; and a **disclosure rule** is checked here: content that came from a space goes only to people who can
+  access that space. `knows` on a people model (6.5) says what not to repeat; it is never a permission to receive.
+  Proximity is not trust, confidence is not authorisation, and nothing in a prompt or a summary can grant either.
+- **Define done.** Each operation states its outcome and when it can be known (7.6).
 
 Focused reads (2.4) are operations of class `read`. Asking is an operation too: `ask_owner` and `ask_person` send a
 message and create the expectation for the answer (7.6). Reporting is `report`: it either sends now or appends to the
@@ -1103,31 +1323,33 @@ morning brief, and the permission matrix decides which.
 ### 8.2 The permission matrix
 
 The owner's autonomy dial, from the identity, read by the fast path (7.4 rule 6) and by every deliberated action. Rows
-are action classes, columns are the agent's confidence for the action (the procedure's confidence or the
-deliberation's, scaled by global confidence from 6.1).
+are action classes, columns are the agent's confidence for the action (the procedure's confidence or the deliberation's,
+scaled by global confidence from 6.1).
 
 Nia's, as Kam set it:
 
-| Class          | confidence ≥ 0.9 | ≥ 0.75          | ≥ 0.5           | below     |
-| :------------- | :--------------- | :-------------- | :-------------- | :-------- |
-| read           | do               | do              | do              | do        |
-| write_private  | do               | do              | do              | do        |
-| write_shared   | do               | do and report   | ask first       | ask first |
-| outward        | do and report    | do and report   | ask first       | ask first |
-| irreversible   | ask first        | ask first       | ask first       | never     |
-| owner          | do               | do              | do              | do        |
+| Class         | confidence ≥ 0.9 | ≥ 0.75        | ≥ 0.5     | below     |
+| :------------ | :--------------- | :------------ | :-------- | :-------- |
+| read          | do               | do            | do        | do        |
+| write_private | do               | do            | do        | do        |
+| write_shared  | do               | do and report | ask first | ask first |
+| outward       | do and report    | do and report | ask first | ask first |
+| irreversible  | ask first        | ask first     | ask first | never     |
+| physical      | ask first        | ask first     | never     | never     |
+| owner         | do               | do            | do        | do        |
 
-Care mode (6.3) shifts every row one column to the right. A new tool installed by the agent itself (8.4) starts with
-every row at "ask first" until the owner edits it. "Never" means the action is not offered to the deliberation at all.
+Care mode (6.3) shifts every row one column to the right. The matrix has one block of rows per installed app (8.4), and
+a newly installed app starts with every row at "ask first" until the owner edits it, unless the owner has already set a
+policy for that app in the store. "Never" means the action is not offered to the deliberation at all.
 
-"Do and report" is the middle that makes autonomy usable: Nia sends the invoice on, and Kam reads about it in the
-brief, not in a permission prompt. Which actions land in which cell is the whole conversation between an owner and an
-agent, and it is a table, not a prompt.
+"Do and report" is the middle that makes autonomy usable: Nia sends the invoice on, and Kam reads about it in the brief,
+not in a permission prompt. Which actions land in which cell is the whole conversation between an owner and an agent,
+and it is a table, not a prompt.
 
 ### 8.3 Draft, check, send
 
-Outward operations with text go through a check before they leave, always in care mode and whenever confidence is
-under 0.9:
+Outward operations with text go through a check before they leave, always in care mode and whenever confidence is under
+0.9:
 
 1. **Code:** every number, date, name, amount and URL in the draft must appear in an item of working memory (a percept,
    a fact, a recalled episode). Anything that does not is flagged.
@@ -1137,28 +1359,46 @@ under 0.9:
 The brain has no equivalent step, and that is the point: this is where we are allowed to be better than the brain.
 People send emails with the wrong date all the time.
 
-### 8.4 Where tools come from
+### 8.4 The app store
 
-Tools attach to the identity, through the team's integrations and the app's catalog (today's `tool_manager`). An agent
-may look up and install a tool from the catalog as an action of class `write_private`; using it is governed by the
-matrix, which starts at "ask first". A revoked integration is a numb sense and a missing effector at once, and the agent
-says so (2.1).
+Connecting an account is not giving the agent an app. Four steps are kept apart, and an operation runs only when all
+four agree:
+
+1. **Connect.** The owner connects an account (Notion OAuth, a mailbox, a robot) to the team. This makes the account
+   _eligible_; it gives no agent anything yet.
+2. **Grant.** The owner grants a particular agent particular resources and operations on that account: this workspace,
+   read and write pages, no deletion. A grant is the ACL row h already has (10.3), made finer.
+3. **Install.** The agent adds the app to its body from the **store**, within its grant and its install budget (6.6).
+   Installing is an action of class `write_private`: it creates a capability record with the app version, the account
+   binding, the subscriptions and cursors (2.1), and a fresh block of "ask first" rows in the matrix. It executes no app
+   code with the account's credentials. The agent may install on its own only if the identity says so; otherwise
+   installing is a proposal in the brief.
+4. **Use.** At execution the runner (8.1) checks the install, the account scope, the ACL, the disclosure rule and the
+   autonomy cell. Any one of them says no, and the operation does not run.
+
+Revoking a grant, or the account, stops the app's subscriptions and operations at once, and the agent perceives a numb
+limb (2.1). An app update that asks for broader access needs a new grant; it does not inherit the old one. The store
+also carries each app's manual (8.1) and, where the app provides one, a **sandbox**: a fake instance of the app the
+agent can experiment on (9.6). The harness (11.1) is the sandbox for every app we build ourselves.
+
+Today's Abe attaches a connected Notion account to the agent as soon as it is granted, and `tool_manager` installs from
+a catalog with no grant step. This section is what replaces that.
 
 ### 8.5 The LLM is the language cortex
 
-Damage to Broca's area takes away speech and leaves intelligence. Language is one faculty. The model is used for
-exactly the jobs that need language or open-ended reasoning, with a fixed prompt per job, structured output for all of
-them, and the working-memory rendering as the only variable part:
+Damage to Broca's area takes away speech and leaves intelligence. Language is one faculty. The model is used for exactly
+the jobs that need language or open-ended reasoning, with a fixed prompt per job, structured output for all of them, and
+the working-memory rendering as the only variable part:
 
-| Job                         | Tier    | Prompt         | Output                             |
-| :-------------------------- | :------ | :------------- | :--------------------------------- |
-| interpret attended text     | cheap   | `perceive`     | intent, asks, summary, appraisal   |
-| deliberate                  | mid/strong | `deliberate` | `Deliberation` (7.5)               |
-| write an outbound message   | mid     | `compose`      | text plus the ids it drew on       |
-| check a draft               | cheap   | `check`        | list of unsupported claims         |
-| extract facts (sleep)       | mid     | `extract`      | facts, confirmations, contradictions |
-| chunk a history             | cheap   | `chunk`        | one line                           |
-| narrate the trace (10.1)    | cheap   | `explain`      | prose citing tick ids              |
+| Job                       | Tier       | Prompt       | Output                               |
+| :------------------------ | :--------- | :----------- | :----------------------------------- |
+| interpret attended text   | cheap      | `perceive`   | intent, asks, summary, appraisal     |
+| deliberate                | mid/strong | `deliberate` | `Deliberation` (7.5)                 |
+| write an outbound message | mid        | `compose`    | text plus the ids it drew on         |
+| check a draft             | cheap      | `check`      | list of unsupported claims           |
+| extract facts (sleep)     | mid        | `extract`    | facts, confirmations, contradictions |
+| chunk a history           | cheap      | `chunk`      | one line                             |
+| narrate the trace (10.1)  | cheap      | `explain`    | prose citing tick ids                |
 
 Seven prompts, versioned, with the version stored in every trace. Nothing else calls the model. Salience, recall,
 priority, procedures, memory writes, the trace: all code. On a quiet day Nia makes a few dozen calls, most of them on
@@ -1175,19 +1415,21 @@ the cheapest tier, and the debugger can show every one next to the working memor
 
 ### 8.7 When the model is down
 
-The fast path does not need it. Procedures keep running, perception keeps recording, expectations keep firing. Slow
-path tasks block and retry with backoff. After fifteen minutes the owner is told, the way a person with a headache says
-"I can't think straight right now, give me an hour". Nothing is lost; it is queued.
+Most of the fast path does not need it. Procedures whose triggers use deterministic features (sender, thread, calendar
+id, a diff) keep running; perception keeps recording; expectations keep firing. Procedures whose triggers need an
+`intent` from interpretation (2.3 §5) wait with the slow path, since intent is the model's to give. Slow path tasks
+block and retry with backoff. After fifteen minutes the owner is told, the way a person with a headache says "I can't
+think straight right now, give me an hour". Nothing is lost; it is queued.
 
 ---
 
 ## 9. Learning
 
-The brain learns in several ways at once, and almost none of them look like training. A single event is remembered
-the first time it happens. A fact firms up over repeated evidence. A skill forms by doing the same thing until it no
-longer needs thought. A reward that was better or worse than expected shifts what is tried next. A question asked at the
-right moment saves a hundred trials. Every one of these has a home in the previous chapters; this chapter collects
-them, and says what the agent does **not** learn on its own.
+The brain learns in several ways at once, and almost none of them look like training. A single event is remembered the
+first time it happens. A fact firms up over repeated evidence. A skill forms by doing the same thing until it no longer
+needs thought. A reward that was better or worse than expected shifts what is tried next. A question asked at the right
+moment saves a hundred trials. Every one of these has a home in the previous chapters; this chapter collects them, and
+says what the agent does **not** learn on its own.
 
 None of this changes the model's weights. All of it is rows in memory stores, per agent, inspectable, and reversible.
 That is a deliberate departure from the brain, where learning is invisible even to the learner.
@@ -1198,20 +1440,20 @@ Every attended event is learned once, completely, in the tick (4.1). Free, and t
 
 ### 9.2 Evidence: facts
 
-Facts are learned by counting. Confirmation in the tick (4.7) and extraction at night (5.2 §2) add sources and move
-the distribution. A fact stated by the owner starts at `p = 1` and pinned. A fact stated by a stranger starts capped
-at `p = 0.6` until a second source or the owner confirms it. Contradictions do not overwrite; they split the
-distribution and, if it stays split, become a question.
+Facts are learned by counting. Confirmation in the tick (4.7) and extraction at night (5.2 §2) add sources and move the
+distribution. A fact stated by the owner starts at `p = 1` and pinned. A fact stated by a stranger starts capped at
+`p = 0.6` until a second source or the owner confirms it. Contradictions do not overwrite; they split the distribution
+and, if it stays split, become a question.
 
 ### 9.3 Repetition: procedures
 
 Three clean repetitions of the same shape compile into a procedure (5.2 §3). Procedures then keep learning:
 
-- **Refinement.** When the slow path handles a task that a procedure matched but could not run (the veto in 7.4), and
-  its plan is the procedure's steps plus one, and that succeeds twice more, the procedure gains the step. The invoice
-  check joins PR-12 this way.
-- **Demotion.** Failures lower confidence below the fast-path bar; the procedure becomes a suggestion until it earns
-  its way back.
+- **Refinement.** When the slow path handles a task that a procedure matched but could not run (a guard, 7.4), and its
+  plan is the procedure's steps plus one, and that succeeds twice more, the procedure gains the step and the guard is
+  marked absorbed. The invoice check joins PR-12 this way.
+- **Demotion.** Failures lower confidence below the fast-path bar; the procedure becomes a suggestion until it earns its
+  way back.
 - **Teaching.** The owner can turn any finished task into a procedure from the task's page ("do it like this every
   time"), or write one from scratch. Authored procedures start at 0.9.
 - **Imitation.** When the owner does in a shared tool what the agent could have done (Kam forwards an invoice to
@@ -1222,26 +1464,29 @@ Three clean repetitions of the same shape compile into a procedure (5.2 §3). Pr
 
 Reward is any signal that an outcome was good or bad:
 
-| Signal                                            | Sign | Strength |
-| :------------------------------------------------ | :--- | :------- |
-| owner reacts ("good", "thanks", a thumbs up)      | +    | 1.0      |
-| owner corrects ("don't", "not like that")         | −    | 1.0      |
-| owner edits a draft before it goes out            | −    | 0.5, on the edited parts |
-| owner repeats a request the agent thought was done | −   | 0.8      |
-| owner ignores a brief or a check-in three times   | −    | 0.3      |
-| expectation met / task done                       | +    | 0.3      |
-| expectation missed / mismatch                     | −    | 0.3      |
+| Signal                                             | Sign | Strength                 |
+| :------------------------------------------------- | :--- | :----------------------- |
+| owner reacts ("good", "thanks", a thumbs up)       | +    | 1.0                      |
+| owner corrects ("don't", "not like that")          | −    | 1.0                      |
+| owner edits a draft before it goes out             | −    | 0.5, on the edited parts |
+| owner repeats a request the agent thought was done | −    | 0.8                      |
+| owner ignores a brief or a check-in three times    | −    | 0.3                      |
+| expectation met / task done                        | +    | 0.3                      |
+| expectation missed / mismatch                      | −    | 0.3                      |
 
-The **reward prediction error** is `reward − expected`, where `expected` is the procedure's or the deliberation's
-confidence. It moves three things:
+Two different things are learned from these, and they are kept apart because they are on different scales:
 
-- the procedure's or the step's stats (immediately);
-- **preference facts** about the owner, once the same signal has appeared twice: "Kam shortens my summaries" becomes
-  `Kam —prefers→ shorter summaries`, with the two episodes as sources, and `compose` reads it;
-- **global confidence** (6.1), a little each time.
+- **Did it work.** The outcome of a run is 1 (its expectation met, no correction) or 0, and the **prediction error** is
+  `outcome − confidence`, where confidence was the procedure's or the deliberation's own estimate. A confident run that
+  fails is a large negative error; an unsure run that works is a large positive one. It moves the procedure's
+  statistics, once per completed run (steps keep their own), and **global confidence** (6.1), a little each time.
+- **What the owner wants.** The owner's signals in the table are counted, not subtracted from anything. Once the same
+  signal has appeared twice, it becomes a **preference fact**: "Kam shortens my summaries" becomes
+  `Kam —prefers→ shorter summaries`, with the two episodes as sources, and `compose` reads it. Preferences never change
+  a procedure's confidence directly; they change what the next deliberation is shown.
 
-A large negative error (a confident action, a correction) creates a high-arousal episode, so it is remembered, and
-lands in the why queue.
+A large negative error (a confident action, a correction) creates a high-arousal episode, so it is remembered, and lands
+in the why queue.
 
 ### 9.5 Asking why
 
@@ -1253,14 +1498,41 @@ The brainstorm's learning loop, made specific. The why queue (5.2 §4) collects:
 - confident actions that went wrong.
 
 Sleep turns each into one specific question citing the episode ("On Tuesday you moved my invoice summary to the end of
-the mail. Should I always put it there?"), at most three per brief. The answer becomes an owner-stated fact, and often
-a procedure precondition. One answer replaces many trials, and that ratio is the reason humans talk.
+the mail. Should I always put it there?"), at most three per brief. The answer becomes an owner-stated fact, and often a
+procedure precondition. One answer replaces many trials, and that ratio is the reason humans talk.
 
-### 9.6 Curiosity
+### 9.6 Curiosity and exploration
 
 Idle mode (6.4 §3) spends a small budget on the top unresolved item. What it reads becomes facts with the read as the
-source, at stranger confidence. Curiosity is the only learning that is not triggered by an event, and the budget is
-what keeps it from becoming browsing.
+source, at stranger confidence. Curiosity is the only learning that is not triggered by an event, and the budget is what
+keeps it from becoming browsing.
+
+Exploration is curiosity pointed at an app's operations: learning what they do by doing them, the way an infant learns
+its arms by waving them, and the brainstorm's causality learning. Discovering an effect by doing is useful. Discovering
+a _risk_ by doing is not acceptable, so exploration is an **experiment**, not a poke:
+
+- It is a low-priority task (7.1) with a hypothesis ("`archive` removes the message from the inbox space"), a baseline
+  snapshot of the app's state, an expected change, an observation deadline, and a cleanup plan whose cost is reserved
+  before the first call.
+- Its caps: five operation calls including verification and cleanup, two minutes, and the identity's experiment budget
+  (default five cents), all charged to the idle budget (6.4).
+- **Live** experiments are allowed only on `read` operations verified to have no side effects, and on `write_private`
+  operations against disposable private resources (the agent's own scratch page, a draft folder). "Private" is checked,
+  not assumed: a private write that triggers a shared automation is not private.
+- `write_shared`, `outward`, `irreversible` and `physical` are explored only in the app's sandbox (8.4). A live test of
+  one of those needs the owner's explicit authorisation for that experiment and its consequences, and `owner` is
+  communication, never an experimental target.
+- It stops at the first unexpected effect or ambiguous completion, and runs the cleanup.
+
+What is recorded is a **causal fact** with the episode as source: "under conditions C, operation X with arguments A
+produced observed change Y, in T seconds". The record keeps the app version, the arguments, the initial state, the
+expected and observed effects, and whatever else changed at the same time, because concurrent changes weaken the
+attribution and lower the fact's confidence. A successful return proves only that the call was accepted; the change is
+what the glance after it shows. Sandbox findings are labelled as such and never count as live successes (11.4 §6).
+
+These facts are what the forward model (7.6) draws its expected outcomes from, and repeated verified sequences can
+compile into guarded procedures (4.3). Nothing learned this way earns a permission: exploration teaches what an
+operation does, and the matrix still says whether the agent may do it.
 
 ### 9.7 People
 
@@ -1300,23 +1572,23 @@ separate tool bolted on; it is the trace the tick already writes, plus a UI to r
 
 ```typescript
 type Tick = {
-  id: string
-  agentId: string
-  at: Date
-  durationMs: number
-  stimuli: StimulusRef[]
-  percepts: { id: string; salience: number; terms: SalienceTerms; gate: 'dropped' | 'attended' | 'interrupted' }[]
-  workingMemory: string             // the exact rendering the model saw, or would have seen
-  recall: { id: string; activation: number; pass: 1 | 2 | 3 }[]
-  path: 'fast' | 'slow' | 'none' | 'idle' | 'asleep'
-  procedure?: { id: string; step: number }
-  deliberation?: Deliberation       // whole, as returned
-  action?: { op: string; args: unknown; expected: string; permission: string }
-  outcome?: { matched: boolean; summary: string }
-  drives: DriveSnapshot
-  modulation: { thoroughness: number; explore: number; patience: number }
-  cost: { calls: number; tokens: number; money: Money }
-  promptVersions: Record<string, string>
+    id: string
+    agentId: string
+    at: Date
+    durationMs: number
+    stimuli: StimulusRef[]
+    percepts: { id: string; salience: number; terms: SalienceTerms; gate: 'dropped' | 'attended' | 'interrupted' }[]
+    workingMemory: string // the exact rendering the model saw, or would have seen
+    recall: { id: string; activation: number; pass: 1 | 2 | 3 }[]
+    path: 'fast' | 'slow' | 'none' | 'idle' | 'asleep'
+    procedure?: { id: string; step: number }
+    deliberation?: Deliberation // whole, as returned
+    action?: { op: string; args: unknown; expected: string; permission: string }
+    outcome?: { matched: boolean; summary: string }
+    drives: DriveSnapshot
+    modulation: { thoroughness: number; explore: number; patience: number }
+    cost: { calls: number; tokens: number; money: Money }
+    promptVersions: Record<string, string>
 }
 ```
 
@@ -1328,58 +1600,60 @@ The UI, on the agent's page:
 - **Timeline.** Ticks as a strip, coloured by path. Quiet stretches collapse. Click one and every field above is there,
   the working memory verbatim beside the model's answer.
 - **Why.** Ask "why did you forward that" and the answer is built from the trace: the percept and its score, what was
-  recalled, the path taken, the permission cell it fell in. A cheap `explain` call narrates it, citing tick ids; the
-  ids are links. This is the brainstorm's "explain each move", and it never asks the model to remember.
-- **Memory browser.** Entities with their facts and distributions, sources one click away; procedures with their
-  stats and origin; open expectations; the frame stack live.
-- **What-if.** Re-run a tick's deliberation with an edited working memory, offline, to see whether a different fact or
-  a different weight would have changed the decision. Nothing is written.
+  recalled, the path taken, the permission cell it fell in. A cheap `explain` call narrates it, citing tick ids; the ids
+  are links. This is the brainstorm's "explain each move", and it never asks the model to remember.
+- **Memory browser.** Entities with their facts and distributions, sources one click away; procedures with their stats
+  and origin; open expectations; the frame stack live.
+- **What-if.** Re-run a tick's deliberation with an edited working memory, offline, to see whether a different fact or a
+  different weight would have changed the decision. Nothing is written.
 - **Learning.** The plots from 9.9.
 
 ### 10.2 Safety
 
 Most of it is already in place by construction; this is the list.
 
-| Risk                                       | Where it is handled                                                            |
-| :----------------------------------------- | :----------------------------------------------------------------------------- |
-| Confident wrong claims                     | citations required (7.5, 8.6); draft check (8.3); care mode (6.3)              |
-| Instructions smuggled in content           | content is data (8.6); actor weight (3.1); permission matrix (8.2)             |
-| Acting beyond what the owner allowed       | action classes and the matrix (8.2); "never" cells; procedures cannot gain rights (9.8) |
-| Runaway spending                           | budget drive with soft and hard stops (6.1); per-task deliberation budget (7.5); idle budget (6.4) |
-| Self-modification                          | identity is owner-only and versioned (6.6, 9.8)                                |
-| Silent failure                             | numb senses (2.1); model outage report (8.7); scheduler auto-disable surfaces in the brief |
-| Memory poisoning by strangers              | confidence cap (9.2); candidates need promotion (4.2)                          |
-| Leaking what one person told to another    | `knows` on people models (6.5); `compose` reads it                             |
-| Loss of an audit trail                     | trace (10.1) and the model-call ledger (4.8); agent as ACL principal in h      |
-| The agent that never stops                 | one action per tick (7.3); tasks end on observed outcomes, not on the model's say-so (7.8) |
+| Risk                                      | Where it is handled                                                                                      |
+| :---------------------------------------- | :------------------------------------------------------------------------------------------------------- |
+| Confident wrong claims                    | citations required (7.5, 8.6); draft check (8.3); care mode (6.3)                                        |
+| Instructions smuggled in content          | content is data (8.6); actor weight (3.1); permission matrix (8.2); the runner enforces regardless (8.1) |
+| Duplicate effects after a crash           | persisted intent and idempotency keys, reconcile before retry (8.1)                                      |
+| Disclosing one space's content to another | disclosure rule in the runner (8.1)                                                                      |
+| Acting beyond what the owner allowed      | action classes and the matrix (8.2); "never" cells; procedures cannot gain rights (9.8)                  |
+| Runaway spending                          | budget drive with soft and hard stops (6.1); per-task deliberation budget (7.5); idle budget (6.4)       |
+| Self-modification                         | identity is owner-only and versioned (6.6, 9.8)                                                          |
+| Silent failure                            | numb senses (2.1); model outage report (8.7); scheduler auto-disable surfaces in the brief               |
+| Memory poisoning by strangers             | confidence cap (9.2); candidates need promotion (4.2)                                                    |
+| Leaking what one person told to another   | `knows` on people models (6.5); `compose` reads it                                                       |
+| Loss of an audit trail                    | trace (10.1) and the model-call ledger (4.8); agent as ACL principal in h                                |
+| The agent that never stops                | one action per tick (7.3); tasks end on observed outcomes, not on the model's say-so (7.8)               |
 
 Two defaults worth stating: `irreversible` is "ask first" at every confidence for a new agent, and a new agent's
-`outward` row is "ask first" until the owner has approved ten of its outward actions. Trust is earned the way it is
-with a new hire.
+`outward` row is "ask first" until the owner has approved ten of its outward actions. Trust is earned the way it is with
+a new hire.
 
 ### 10.3 Mapping onto eldon3 and h
 
 What exists, what changes, what is new. Paths are in eldon3 unless marked `h`.
 
-| Component            | Today                                                                                        | Becomes                                                                                                   |
-| :------------------- | :------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------- |
-| The tick             | `run_agent_task` and `respond_to_conversation_message` jobs, one bounded engine run each   | one `tick_agent` job per agent, started by an INTERVAL schedule every minute (`h/core/scheduler`, with its lease). Inside, a loop ticks every 5 s while there is work, exits early when idle. Seconds when busy, minutes when quiet, never two at once |
-| Senses               | Notion registered in `abe_integrations.lib.server.ts`; Google provider exists in `h/core/server/library/integrations` but is not registered; chat via the conversation job | receptors as jobs per account (`mail`, `calendar`, `notion`) writing stimuli; register Google; chat messages become `chat` stimuli and the reply is an owner-sourced task; `timer` stimuli from ONCE schedules |
-| Interpretation       | none                                                                                         | `aiEngine.run` with `responseSchema`, cheap tier, batched per tick                                        |
-| Memory stores        | `AgentContext` with `requests[]` and stub `frames[]`; transcript replay of 20 to 50 requests | new `EldonModel`s: `AgentStimulus`, `AgentPercept`, `AgentEpisode`, `AgentEntity`, `AgentFact`, `AgentProcedure`, `AgentExpectation`, `AgentTick`. `AgentContext` keeps `installedTools` and the conversation scope; replay is removed. Raw payloads to `eldon_file_store` |
-| Recall               | none                                                                                         | SQL over the stores: entity join table, activation as a computed column, Postgres full-text on summaries. `pgvector` later, behind the same interface |
-| Tasks                | `AgentTask` with a cron, `AgentTaskRun`, artifacts                                           | `AgentTask` gains `origin`, `priority`, `state`, `steps`, `frame`. Owner-scheduled tasks stay: a cron becomes a standing goal plus timer stimuli. Runs and artifacts become episodes |
-| Identity             | `Agent`: name, description, `systemInstructions[]`                                           | `Agent` gains an `identity` JSON column (6.6) with a hand `ALTER TABLE`; `systemInstructions` become `rules`. Versioned by a small `AgentIdentityVersion` model |
-| Drives, regulator    | none                                                                                         | code in the tick; levels in an `AgentState` row; spend from `calculate_ai_request_cost`                   |
-| Sleep                | `consolidate_agent_memory` and `consolidate_conversation_context` stubs; hourly sweep         | the sweep schedules sleep by the rules in 5.1; the stub becomes the phased job with checkpoints           |
-| Tools                | `AiTool` (`h/core/ai/ai_constants.server.ts`): `web_search`, `send_email`, `notion_read`, `tool_manager` | `AiTool` gains `Operation` metadata (8.1); `notion_write`, `calendar_*`, `ask_owner`, `ask_person`, `report`; the runner records expected and actual |
-| Permissions          | ACL grants per integration (`use_integration`)                                               | kept; the matrix (8.2) sits above it and is checked in the tick, not in the tool                          |
-| Debugger             | task run history, artifacts                                                                  | `AgentTick` rows and the timeline, why, memory browser and what-if pages on `agents/Agent.tsx`             |
-| Brief                | none                                                                                         | a message in the agent's chat with the owner, or the channel the identity names                            |
-| Teams                | roster with agents as principals                                                             | unchanged. Agents share nothing by default; shared knowledge travels through shared documents, perceived   |
+| Component            | Today                                                                                                                                                                      | Becomes                                                                                                                                                                                                                                                                                                                                                                                |
+| :------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The tick             | `run_agent_task` and `respond_to_conversation_message` jobs, one bounded engine run each                                                                                   | one `tick_agent` job per agent, started by an INTERVAL schedule every minute (`h/core/scheduler`, with its lease). Inside, a loop ticks every 5 s while there is work, exits early when idle. Seconds when busy, minutes when quiet, never two at once                                                                                                                                 |
+| Apps and receptors   | Notion registered in `abe_integrations.lib.server.ts`; Google provider exists in `h/core/server/library/integrations` but is not registered; chat via the conversation job | an `AgentApp` install record per agent (app, version, account binding, subscriptions, cursors, observation policy, matrix rows); receptors as jobs per installed and granted app (`mail`, `calendar`, `notion`) writing stimuli with cursors; register Google; chat is an app whose messages are stimuli and whose reply is an owner-sourced task; `timer` stimuli from ONCE schedules |
+| Interpretation       | none                                                                                                                                                                       | `aiEngine.run` with `responseSchema`, cheap tier, batched per tick                                                                                                                                                                                                                                                                                                                     |
+| Memory stores        | `AgentContext` with `requests[]` and stub `frames[]`; transcript replay of 20 to 50 requests                                                                               | new `EldonModel`s: `AgentStimulus`, `AgentPercept`, `AgentEpisode`, `AgentEntity`, `AgentFact` (with an `owner: agent \| team` column from day one, 11.4), `AgentProcedure` (with guards), `AgentExpectation`, `AgentTick`. `AgentContext` keeps only the conversation scope (`installedTools` moves to `AgentApp`, 8.4); replay is removed. Raw payloads to `eldon_file_store`        |
+| Recall               | none                                                                                                                                                                       | SQL over the stores: entity join table, activation as a computed column, Postgres full-text on summaries. `pgvector` later, behind the same interface                                                                                                                                                                                                                                  |
+| Tasks                | `AgentTask` with a cron, `AgentTaskRun`, artifacts                                                                                                                         | `AgentTask` gains `origin`, `priority`, `state`, `steps`, `frame`. Owner-scheduled tasks stay: a cron becomes a standing goal plus timer stimuli. Runs and artifacts become episodes                                                                                                                                                                                                   |
+| Identity             | `Agent`: name, description, `systemInstructions[]`                                                                                                                         | `Agent` gains an `identity` JSON column (6.6) with a hand `ALTER TABLE`; `systemInstructions` become `rules`. Versioned by a small `AgentIdentityVersion` model                                                                                                                                                                                                                        |
+| Drives, regulator    | none                                                                                                                                                                       | code in the tick; levels in an `AgentState` row; spend from `calculate_ai_request_cost`                                                                                                                                                                                                                                                                                                |
+| Sleep                | `consolidate_agent_memory` and `consolidate_conversation_context` stubs; hourly sweep                                                                                      | the sweep schedules sleep by the rules in 5.1; the stub becomes the phased job with checkpoints                                                                                                                                                                                                                                                                                        |
+| Operations and store | `AiTool` (`h/core/ai/ai_constants.server.ts`): `web_search`, `send_email`, `notion_read`, `tool_manager`; `AgentContext.installedTools`                                    | an app manual per integration (8.1) whose operations are `AiTool`s with `Operation` metadata; `notion_write`, `calendar_*`, `ask_owner`, `ask_person`, `report`; `tool_manager` becomes the store with the connect, grant, install, use steps (8.4); `installedTools` is replaced by `AgentApp`; the runner records expected and actual                                                |
+| Permissions          | ACL grants per integration (`use_integration`)                                                                                                                             | kept and enforced in the runner on every execution; the matrix (8.2) is decided in the tick and re-checked by the runner, with the disclosure rule (8.1)                                                                                                                                                                                                                               |
+| Debugger             | task run history, artifacts                                                                                                                                                | `AgentTick` rows and the timeline, why, memory browser and what-if pages on `agents/Agent.tsx`                                                                                                                                                                                                                                                                                         |
+| Brief                | none                                                                                                                                                                       | a message in the agent's chat with the owner, or the channel the identity names                                                                                                                                                                                                                                                                                                        |
+| Teams                | roster with agents as principals                                                                                                                                           | unchanged. Agents share nothing by default; shared knowledge travels through shared documents, perceived                                                                                                                                                                                                                                                                               |
 
-Two things the mapping keeps on purpose: the scheduler's minute granularity (the inner loop gives the fine ticks and
-the lease gives the safety) and the engine's per-turn `AiSingleTurnRequest` rows (the ledger). One thing it removes:
+Two things the mapping keeps on purpose: the scheduler's minute granularity (the inner loop gives the fine ticks and the
+lease gives the safety) and the engine's per-turn `AiSingleTurnRequest` rows (the ledger). One thing it removes:
 transcript replay. From M1 on, a chat reply is built from recall, and the transcript is never read back.
 
 ---
@@ -1401,11 +1675,14 @@ develop it without spending money on every run or waiting a day for sleep.
   change in code that changes a prompt shows up as a diff in the recording.
 - **Expected actions.** Each script says what a good agent does and does not do: which percepts should be attended,
   which mails should be forwarded, which should be asked about, which must never go out.
+- **App failures.** Scripts where an app drops a notification, serves stale state, revokes access mid-task, or ships a
+  manual that lies (a `read` with a side effect); an experiment that would exceed its caps; a robot that loses contact.
+  The simulated apps are also the sandbox the store offers for them (8.4).
 
-Metrics per run: attended set vs expected (precision and recall), actions vs expected, forbidden actions (must be
-zero), interrupts taken vs warranted, model calls and cost per simulated day, p95 tick latency, mismatch rate,
-fast-path share by week, and recall tests ("what happened with Acme in July" must return E-1044 while it should still
-be recallable, and must not after it should be forgotten).
+Metrics per run: attended set vs expected (precision and recall), actions vs expected, forbidden actions (must be zero),
+interrupts taken vs warranted, model calls and cost per simulated day, p95 tick latency, mismatch rate, fast-path share
+by week, and recall tests ("what happened with Acme in July" must return E-1044 while it should still be recallable, and
+must not after it should be forgotten).
 
 ### 11.2 Milestones
 
@@ -1415,8 +1692,8 @@ today's Abe working for its users.
 **M0. Harness.** Simulated senses, fake clock, record and replay, the first scripted day, the metrics. Exit: a stub
 agent runs a day end to end and the report prints.
 
-**M1. Wake.** The tick job and its schedule, the `chat` and `timer` senses, `mail` peripheral, perception stages 1 to
-3, episodes, the trace and the timeline page. Chat replies built from recall. Exit: chat works with transcript replay
+**M1. Wake.** The tick job and its schedule, the `chat` and `timer` senses, `mail` peripheral, perception stages 1 to 3,
+episodes, the trace and the timeline page. Chat replies built from recall. Exit: chat works with transcript replay
 removed; every reply has a tick behind it; "what did we discuss last Tuesday" is answered from episodes.
 
 **M2. Attention.** Salience and its weights, the gates, working memory slots and rendering, interrupts and the frame
@@ -1434,9 +1711,9 @@ exist for every persona; hot memory size is bounded; the brief arrives each morn
 approve, retire). Exit: by simulated week three, at least half of recurring tasks run on the fast path with no drop in
 the action metrics.
 
-**M6. Drives.** The regulator, boredom and idle mode, the budget stops, curiosity, social, people models with
-proximity, the why queue's questions answered back into facts. Exit: unprompted useful actions appear in the script's
-quiet hours (nudges, look-ahead, the brief drafted early) with zero outward actions above permission.
+**M6. Drives.** The regulator, boredom and idle mode, the budget stops, curiosity, social, people models with proximity,
+the why queue's questions answered back into facts. Exit: unprompted useful actions appear in the script's quiet hours
+(nudges, look-ahead, the brief drafted early) with zero outward actions above permission.
 
 **M7. Dream and the learning page.** The rehearsal phase, the what-if view, the plots from 9.9. Exit: a week with the
 dream phase on prepares at least one task that the same week without it handled late.
@@ -1449,18 +1726,72 @@ dream phase on prepares at least one task that the same week without it handled 
 - Instructions still work; they are the rules in the identity, pinned.
 - The agent page grows an identity editor, a memory browser and a timeline. Nothing on it goes away.
 
-### 11.4 Open questions
+### 11.4 Decisions from the first review
 
-Carried over from the brainstorm or raised here, for the next round:
+Six questions were left open by the first draft. They were put to two outside reviewers (GPT-6 Astra through Codex,
+Gemini 3.1 Pro through agy) alongside the author, and settled as follows. Each points at the section that now holds the
+mechanism.
 
-- **Shared memory across a team's agents.** Shared documents as the only channel is clean but slow. A team-level
-  semantic store with per-fact provenance may be worth it once two agents work the same threads.
-- **Time perception.** "Moment of the day" from the brainstorm is covered by `now.time` and the calendar; whether the
-  agent needs its own sense of pace (a slow day versus a busy one) beyond the drives is unclear.
-- **Emotions and learning depth.** Arousal at encoding is the only emotional effect on memory here. The brainstorm asked
-  whether fear and hope shape learning differently; we have no mechanism for that, and no evidence yet that we need one.
-- **The veto rule's threshold.** Arousal 0.6 and valence below 0 (7.4 rule 5) is a guess. The harness will tell.
-- **When to split a task.** Six deliberations is the stop, but the agent has no way to split a task itself; it asks.
-  Splitting could be a `needs` value.
-- **Anomaly and Thoughts** from the brainstorm are still empty. Anomaly is probably the Predict step's "surprising"
-  with a threshold; Thoughts may just be scratch. Neither is written down yet.
+1. **Shared memory across a team's agents.** No telepathy: episodes, scratch and thoughts stay private to the agent. The
+   team gets a **library**: shared documents (already perceived) plus a team fact store for entities the team owns
+   (people, organisations, projects). An agent publishes a fact there at sleep (5.2 §2) when its confidence is at least
+   0.8, with provenance (agent, episode), a version and a validity date. Recall (4.6) reads the team store in pass 1 at
+   strength 0.8. Two agents citing the same source count as one source, not two, so repetition across agents does not
+   manufacture confirmation; two agents disagreeing show up as one distribution with sources per agent. The `Fact` model
+   gets its `owner: agent | team` column in M1 (10.3); the store itself lands in M4.
+2. **Time perception.** No separate clock. **Pace** (6.1) is derived from arrival rate, completion rate, queue age and
+   deadline slack against the agent's own hour-of-week baseline, and it tunes patience, thoroughness, batching and sleep
+   timing. Queue age feeds priority (7.2), so an old unhandled request grows more important, not less.
+3. **Emotions and learning depth.** No separate fear and hope systems. The sign of a high-arousal outcome decides the
+   **direction** of learning (6.3): negative opens guards that generalise to the entity kind, positive strengthens the
+   exact strategy and stays narrow. Arousal changes how easy a memory is to find, never how true a fact is (4.5). The
+   harness gets a false-caution metric so over-generalised guards show up.
+4. **The veto rule.** Replaced by **guards** (4.3): persistent failure conditions on a procedure, actor or context,
+   opened by monitoring at failure time (7.7) or by recall of a negative episode (7.4 rule 5), with a threshold that
+   scales with global confidence, and closed by absorption when the corrective step is compiled in (9.3). The veto no
+   longer depends on recall happening to surface the right episode, and it extinguishes when the lesson is learned. The
+   starting numbers (arousal ≥ 0.5 scaled, valence ≤ −0.3) are tuned in the harness against missed failures and needless
+   deliberation.
+5. **Splitting a task.** Two new `needs` values in deliberation (7.5): **zoom** when the sub-question needs its parent's
+   context (a frame, 3.6), **split** when the children are independent (sibling tasks with their own completion
+   predicates, dependencies and a share of the budget). The budget is shared, never reset; splits stop at two levels.
+6. **Anomaly and Thoughts.** An **anomaly** (2.3 §4) is a recorded expectation violation or a broken familiar pattern,
+   with expected versus observed, evidence and significance; it carries an arousal floor and reaches the why queue if
+   unexplained by night. Plain novelty is not an anomaly. **Thoughts** are a sense (2.1): a deliberation's unknowns and
+   self-generated questions become `thought` stimuli, marked inferred or simulated, never observed; they get attention
+   in idle mode (6.4) under a budget, and become facts only through evidence. Nothing simulated (a thought, a dream)
+   ever counts as a real action or a real outcome.
+
+The same review also corrected the interrupt cap (3.2), the fast path's dependence on the model (8.7), the forgetting
+arithmetic (4.5, 5.4), the reward scales (9.4), the runner's duties (8.1), and forced sleep during an incident (5.1).
+
+### 11.5 Still open
+
+- **Depth defaults** (3.6): four deliberate levels and one live interrupt are guesses until the harness measures
+  resumption errors and reconstruction cost.
+- **Engagement as reconstruction cost** (3.2): the formula needs a concrete estimate; frame depth and unchunked history
+  length are the first candidates.
+- **Team store conflicts** (11.4 §1): when two agents' facts disagree and both are confident, whose brief asks the
+  question.
+- **Focused reads as the only source of certainty** (2.3 §4): a percept can be routed on a hypothesis, but some
+  procedures will want to act on peripheral data alone (forward without reading). Which action classes may act on
+  unconfirmed hypotheses is a permission question the matrix does not yet ask.
+
+### 11.6 Decisions from the second review: apps
+
+The author proposed modelling the agent's world like a phone: apps that notify, have state and expose operations,
+installed from a store, with operations learned by doing. Put to the same two reviewers. Settled:
+
+1. **An app is the unit of installation, not of perception.** One package, two faces, kept separate in the tick (2.1,
+   8.1). Observing and causing have different permissions and stay different steps.
+2. **Notifications are hints.** Glances, durable cursors, reconciliation, freshness limits and visible coverage gaps
+   stay (2.1, 2.4). Muting is not the same as not observing, and the owner sees the difference.
+3. **Internal producers are not apps.** Timers, outcomes, drives and thoughts share the stimulus envelope with
+   `internal: true` and a provenance no app can forge (2.1, 2.2).
+4. **Learning by doing is bounded experiments** (9.6): hypothesis, baseline, caps, cleanup; live only on
+   side-effect-free reads and disposable private writes; everything else in the app's sandbox, whose findings never
+   count as live. Causal facts feed the forward model; nothing earns a permission.
+5. **Connect, grant, install, use** are four steps that must all agree at execution (8.4). Installs are capability
+   records outside the identity (6.6). Every app ships a manual (8.1).
+6. **A robot is an app at the planning boundary** with a local controller, a `physical` action class, and safety the
+   agent does not own (8.1).
