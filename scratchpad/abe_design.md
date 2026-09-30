@@ -424,3 +424,202 @@ Working memory renders to text in a fixed order (self, now, conflicts, attention
 item prefixed with its id (`P-1042`, `E-207`, `F-77`). The LLM is asked to cite those ids when it uses them. The
 debugger shows the rendering verbatim next to the model's answer. If the agent says something that cites no id, that
 is a claim from the model's own weights, and Chapter 10 says what happens to it.
+
+---
+
+## 4. Memory: episodic, semantic, procedural
+
+The brain does not have "a memory". It has several, with different jobs, different speeds, and different ways of
+forgetting. The hippocampus records specific events fast, in one shot. The neocortex learns general facts slowly, from
+many events. The basal ganglia and cerebellum store skills that run without recall. Working memory (Chapter 3) is
+none of these: it is where the others meet.
+
+Today's Abe keeps memory as a transcript and replays the last 20 to 50 requests. That is neither episodic nor semantic;
+it is a tape. Nia keeps the transcript as an audit log and never reads it back. She remembers the way people do.
+
+### 4.1 Episodic memory: what happened
+
+One episode per attended thing: a percept that won attention, an action with its outcome, a decision. Episodes carry
+time, space, who, what, how it went, and how it felt.
+
+```typescript
+type Episode = {
+  id: string
+  at: Date
+  until?: Date                  // for spans (a task, a conversation)
+  space: SpaceRef
+  goal?: GoalRef
+  task?: TaskRef
+  percepts: PerceptRef[]
+  action?: { op: string; args: unknown; expected: string }
+  outcome?: { result: unknown; matchedExpectation: boolean }
+  entities: EntityRef[]
+  people: EntityRef[]
+  valence: number               // -1 to 1
+  arousal: number               // 0 to 1
+  summary: string               // one to three lines, written at encoding
+  accesses: number              // times recalled (creation counts as one)
+  lastAccess: Date
+  pinned: boolean               // the owner said "remember this"
+  block?: EpisodeRef            // set once compacted into a block (Chapter 5)
+}
+```
+
+Unattended percepts also become episodes, but **thin** ones: percept refs, no summary, arousal 0. They exist so that
+"did anything come from Acme last week" has an answer, and they are the first thing sleep throws away.
+
+### 4.2 Semantic memory: what is true
+
+Entities and facts. An entity is a person, an organisation, a project, a document, a thread, a tool, a place. A fact
+is subject, attribute, value, and every fact carries a distribution and its sources. This is the brainstorm's
+**Identity** made concrete: memory does not say "Acme pays in 30 days", it says "Acme pays in 30 days (0.8) or 45
+days (0.2), from six episodes, last confirmed Sept 2".
+
+```typescript
+type Entity = {
+  id: string
+  kind: 'person' | 'org' | 'project' | 'document' | 'thread' | 'tool' | 'place' | 'concept'
+  names: string[]
+  identifiers: Record<string, string>   // email, notion page id, calendar id, domain
+  candidate: boolean                    // proposed by perception, not yet confirmed by sleep
+  firstSeen: Date
+  lastSeen: Date
+}
+
+type Fact = {
+  id: string
+  subject: EntityRef
+  attribute: string                     // "pays_in_days", "prefers", "works_on", "reports_to"
+  values: { value: unknown; p: number }[]   // a distribution; values can be entity refs
+  confidence: number                    // how much evidence stands behind the distribution
+  sources: EpisodeRef[]
+  firstSeen: Date
+  lastConfirmed: Date
+  lastContradicted?: Date
+  pinned: boolean
+}
+```
+
+Three things live here that people usually store elsewhere:
+
+- **Relations** are facts whose value is an entity: `Acme —supplier_of→ team`.
+- **Preferences and rules** are facts about a person or the team: `Kam —prefers→ "supplier invoices forwarded with a
+  one-line summary"`. The owner's instructions are facts with `pinned: true` and `p: 1`.
+- **People models** (Chapter 6) are entities of kind person with a few reserved attributes: proximity, response time,
+  what they know, how they like to be addressed.
+
+Perception creates candidate entities. Sleep promotes or drops them. A candidate seen twice, or involved in an attended
+episode, gets promoted; the rest are gone in thirty days.
+
+### 4.3 Procedural memory: how to do things
+
+A procedure is a trigger, preconditions, steps, and an expected outcome, plus its track record. Procedures are what
+make the fast path in the tick (1.4 step 7) possible. They come from two places: the owner writes them (a playbook),
+or sleep compiles them from repeated successful episodes (Chapter 5).
+
+```typescript
+type Procedure = {
+  id: string
+  name: string
+  trigger: {
+    percept?: PerceptPattern     // sense, actor kind, intent, entity kinds
+    goal?: GoalRef               // or: serves this standing goal
+  }
+  preconditions: FactPattern[]   // must hold in semantic memory, e.g. actor is a known supplier
+  steps: Step[]                  // atomic ops with parameters bound from working memory
+  expected: OutcomePattern
+  permission: PermissionLevel    // the highest level any step needs (Chapter 8)
+  origin: { kind: 'authored'; by: EntityRef } | { kind: 'compiled'; from: EpisodeRef[] }
+  stats: { runs: number; successes: number; failures: number; lastRun?: Date; lastFailure?: Date }
+}
+```
+
+Confidence is `(successes + 1) / (runs + 2)`: a new compiled procedure starts around 0.75 after three clean runs, and
+one failure in ten runs leaves it at 0.83. The fast path needs 0.8 (Chapter 7); below that the procedure is still
+recalled, but as a suggestion the slow path can follow or reject. Authored procedures start at 0.9 and are never
+deleted by sleep, only flagged when they keep failing.
+
+### 4.4 Prospective memory: what should happen
+
+Expectations are memories about the future: "a reply from Acme by Friday", "the standup at 09:30", "Kam sends the
+contract Thursday". They are what the Predict step (1.4 step 3) matches percepts against, and what fires as a `timer`
+stimulus when the deadline passes with nothing matched. They are created by actions (every outbound message expects a
+reply), by perception (an ask with a date), and by sleep (open loops). Chapter 7 gives the shape and the lifecycle.
+
+### 4.5 Activation: the one number behind recall and forgetting
+
+Every episode, fact and procedure has an activation. It rises when the item is created or recalled, and decays with
+time. It decides what recall returns first, and what sleep forgets. We use the ACT-R base-level form because it has
+thirty years of fit to human recall curves and is cheap to compute:
+
+```text
+B = ln(accesses) − d · ln(hoursSinceCreated)  + 0.5 · arousal  (+ bonus if pinned)
+                                                d = 0.5
+```
+
+Then, at recall time, cue overlap adds to it:
+
+```text
+A = B + Σ over cues c in working memory of  S(c, item)
+```
+
+where `S` is a fixed strength for each kind of match: same thread 1.0, same entity 0.7, related entity one hop away
+0.3, same space 0.2, text similarity scaled to 0 to 0.5.
+
+A few consequences, and they are the ones we want:
+
+- Something seen once fades within days. Something recalled three times is available for weeks. A fact confirmed ten
+  times lasts years.
+- Recalling an item strengthens it. Habits of thought form on their own.
+- Emotionally charged episodes (a mistake that upset Kam) stay recallable much longer than routine ones.
+- The formula runs in SQL: `accesses`, `createdAt` and `arousal` are columns.
+
+### 4.6 Recall
+
+Recall is step 6 of the tick. Its cue is the content of working memory: the attended percepts' entities, threads and
+spaces, the current task's goal, and the text of the percept if any. It runs in three passes, all deterministic:
+
+1. **Index lookup.** Episodes, facts and procedures that reference the cued entities, threads or spaces directly. This
+   is the hippocampal index: entity to everything that touched it.
+2. **Spreading.** One hop along relation facts from the cued entities (Acme → its people, its project, "supplier"), and
+   the items those touch, at lower strength. This is pattern completion: a sender's address brings back the invoice,
+   the deal, and the last time it went wrong.
+3. **Similarity.** Text search over summaries and fact values for the percept's words. Full-text search first; an
+   embedding index later, once we have one (Chapter 10).
+
+Candidates are scored by activation `A`, everything under a retrieval threshold is dropped, and the top items fill the
+`recall` slot up to its capacity of seven, with procedures and pinned facts given the first places. Each recalled item
+gets an access recorded. Recall never calls the model.
+
+### 4.7 Reconsolidation
+
+A recalled memory is open for editing. When a recalled fact is confirmed by an attended percept, its `lastConfirmed`
+and confidence move now, in the tick, not at night. When it is contradicted, the conflict goes into working memory
+(3.7) and its resolution writes back: the winning value's `p` goes up, the losing value's goes down, the new episode
+joins the sources. Values are never deleted at this point; they are outweighed. That is why Nia can answer "I thought
+the standup was at ten; it moved to nine-thirty on Sept 12".
+
+### 4.8 What is not memory
+
+- The **transcript** of model calls (`AiSingleTurnRequest` in h) stays as an audit trail and a cost ledger. The agent
+  does not read it.
+- **Raw payloads** (mail bodies, page snapshots) are kept in cold storage for a while, addressed from percepts, and
+  are not part of any recall pass. Reading them is focused sensing (2.4), an act.
+- **The model's weights** are not memory. Anything the model asserts that has no id behind it is a guess, and
+  Chapter 10 says how guesses are handled.
+
+### 4.9 The invoice, recalled
+
+Cues: Acme billing (P-31), Acme (O-4), thread T-88, "invoice", mailbox.
+
+```text
+pass 1   F-77   Kam prefers supplier invoices forwarded with a one-line summary   (pinned, via O-4 → supplier)
+         PR-12  procedure "forward supplier invoice"                                 conf 0.88, 9 runs
+         E-1180 episode Sept 2: Acme invoice 2260 forwarded, Kam paid in 3 days      A = 1.9
+         P-31   Acme billing: replies in ~1 day, formal tone                          (people model)
+pass 2   F-102  Acme is the supplier for the "office move" project                   A = 0.6
+pass 3   E-1044 episode July: an Acme invoice had a wrong amount, Kam asked to check  A = 1.4 (arousal 0.7 kept it warm)
+```
+
+Seven candidates, six make it. The July episode is the interesting one: without the arousal bonus it would have faded,
+and Nia would not think to check the amount before forwarding.
