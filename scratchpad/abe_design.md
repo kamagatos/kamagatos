@@ -89,7 +89,8 @@ every tick (seconds while active, minutes while idle):
   5. Attend     score salience; gate into working memory; decide whether to interrupt
   6. Recall     pull related episodes, facts, procedures and people into working memory
   7. Select     fast path: a procedure matches with confidence → run it
-                slow path: deliberate with the LLM over working memory → a plan and one action
+                slow path: start a deliberation with the LLM over working memory; it runs beside the
+                          tick with a time budget, and a later tick collects it (8.5)
                 no path: wait, or ask the owner
   8. Act        run one atomic operation; store the expected outcome
   9. Observe    compare outcome to expectation; write the episode; update procedure stats
@@ -456,7 +457,18 @@ can fall toward the floor, since the tool is doing the looking. When `r` drops, 
 notifications as coverage and the place is glanced on its own model. A change found by glance that was never
 announced lowers `r`, raises the tool's "missed notifications" count on its page, and is the learning event that
 makes the agent trust its own eyes over the tool's word for that place. The floor never goes to zero, once a day at
-the least, because a tool that lies can only be caught by looking.
+the least, because a tool that lies can only be caught by looking. And when a tool that has been reliable stops
+announcing, that is not only a lower `r`: a familiar pattern broke, so it is an anomaly (2.3 §4), with an arousal
+floor and a line in the why queue. A tool that starts lying is worth telling the owner about, not just compensating
+for.
+
+**Schedules, not only rates.** Some places do not have a rate; they have a schedule. The plan page changes on Mondays
+at 10:00, the newsletter comes on Tuesdays, invoices arrive on the first of the month. A rate bucket makes that a
+high number in one hour of the week, which is crude; a schedule is sharper than that. Sleep's prospect phase
+(5.2 §4) looks for periodicity in a place's change history and turns it into a **recurring expectation** (7.6): one
+that re-arms itself after being met. The glance scheduler treats it as a timed arrival, like a person's reply, so
+`λ_effective` spikes at 09:55 on Mondays and the bucket rate handles the diffuse rest. A recurring expectation that
+is *missed* is an anomaly by construction: the newsletter did not come.
 
 **What the owner still controls.** Limits, not behaviour: a call budget per tool per hour, a ceiling ("never more
 than every 10 seconds"), blind spots ("never observe this folder", shown as a blind spot on the tool's page, 2.1), and
@@ -521,13 +533,26 @@ Two thresholds, and one comparison against the current task.
 
 - **Attend** (default 0.15): at or above, the percept enters working memory. Below, it is written to episodic memory as
   an unattended percept and nothing else happens now. The newsletter stops here.
-- **Interrupt**: the percept wins the tick, and the current task is suspended, when
-  `salience > min(engagement + switchCost, 0.9)`. Engagement is the current task's priority (Chapter 7) scaled by what
-  an interruption would cost to reconstruct: how deep the frame stack is and how much unchunked history the focus
-  carries. `switchCost` defaults to 0.1 and is the price of losing flow; it applies to interrupts only, never to a
-  deliberate zoom (3.6). The cap at 0.9 is there so that a percept scoring 1.0 (the owner, urgent, addressed directly)
-  can always get through, whatever the agent is doing. The Notion edit (0.68) beats Nia's plan-drafting engagement
-  (0.45 + 0.1).
+- **Interrupt**: the percept is a *candidate* to take the tick when `salience > min(engagement + switchCost, 0.9)`.
+  Engagement is the current task's priority (Chapter 7) scaled by what an interruption would cost to reconstruct:
+
+  ```text
+  engagement     = priority · (0.5 + 0.5 · r)
+  r              = 0.4 · depth/4  +  0.3 · unchunked history / its budget  +  0.3 · midOperation
+  midOperation   = 1 between the steps of a running procedure, or with a draft in scratch; else 0
+  ```
+
+  `switchCost` defaults to 0.1 and is the price of losing flow; it applies to interrupts only, never to a deliberate
+  zoom (3.6). The weights in `r` are calibrated in the harness against the one thing that can be measured: extra
+  deliberations spent after a resume. The cap at 0.9 is there so that a percept scoring 1.0 (the owner, urgent,
+  addressed directly) can always get through, whatever the agent is doing. The Notion edit (0.68) beats Nia's
+  plan-drafting engagement (0.45 + 0.1).
+
+  Winning the gate does not mean *now*. It means the percept enters the **schedule decision** (7.2): now, at the next
+  checkpoint, or after the current task, chosen by how long each side will take and how late each would be. A
+  five-minute interrupt against a task with hours left usually runs at the next step boundary, where nothing needs
+  reconstructing; the same interrupt against a task two minutes from done waits. Only the 1.0 case is "now"
+  unconditionally.
 - **Queue**: attended but not interrupting. The percept sits in working memory and becomes a candidate task at the next
   selection. The invoice and the standup do this.
 
@@ -773,6 +798,9 @@ type Procedure = {
 }
 ```
 
+Stats also hold **duration**: the mean and spread of the procedure's active run time, per step and in total. It is
+what a task's estimate (7.1) and the schedule decision (7.2) are built from, and it is measured, never declared.
+
 Confidence is `(successes + 1) / (runs + 2)`, counted once per completed run (steps keep their own statistics, so a long
 procedure does not inflate itself). A new compiled procedure is at exactly 0.8 after three clean runs, which is the
 fast-path bar (Chapter 7): the fourth run is the first habitual one. One failure in ten runs leaves it at 0.83. Below
@@ -934,6 +962,18 @@ compile. Zooms that recur compile the same way, from their span episodes, into s
 people made ("I'll send the contract Thursday"). Reply deadlines use the person's typical response time from their
 people model. Surprising outcomes, unresolved conflicts and low-confidence decisions that turned out to matter go to the
 **why queue**: questions for the owner, batched into the morning brief instead of pinging through the day.
+
+Prospect also finds **cycles**. For each place with enough history, it looks for intervals between changes that
+cluster at a day, a week or a month (the brainstorm's time patterns), and for each cluster with at least three
+occurrences and a tight spread it creates a recurring expectation (7.6): "the plan page changes Mondays around
+10:00", "an Acme invoice arrives in the first three days of the month". Recurring expectations time glances (2.9),
+feed planning ("the invoice is due next week; the budget page should be current by then"), and make a missed cycle an
+anomaly. Cycles that stop recurring are retired after three misses, with a line in the brief.
+
+Team-store conflicts are handled here too (11.4 §1). When this agent's publish creates a contradiction with another
+agent's confident fact, this agent asks: the entity's owner if a person on the team owns it (a project's lead), else
+the team admin, in its next brief. The store marks the conflict "asked by Nia" so no other agent asks again, and the
+answer resolves it for everyone. The team page lists open conflicts beside leases (8.9).
 
 **5. Compact.** Episodes older than seven days with activation below the compaction threshold are grouped by task or
 thread and day, summarised into one **block** episode, and marked `block = <id>`. Their detail leaves the hot store (raw
@@ -1293,21 +1333,53 @@ type Task = {
     frames: Frame[] // the stack (3.6); frames[0] is the root, the last is the focus
     care: boolean // care mode (6.3)
     budget: { deliberations: number } // remaining; shared out to zooms and splits, never reset
+    estimate: { remainingMinutes: number; spread: number; source: 'procedure' | 'manual' | 'deliberation' }
     waitingOn?: ExpectationRef // when blocked
 }
 ```
+
+**Every task carries a time estimate**: remaining *active* work, not wall-clock. A blocked task waiting for a reply has
+released focus and costs nothing until it returns. The estimate comes from three sources, in order of trust: the
+measured durations of the procedures its steps run (4.3), the manual's `cost.time` per operation (8.1) summed over
+the remaining steps, and the deliberation's own `estimatedMinutes` for a plan (7.5). Estimates are calibrated (7.7):
+the agent learns its own optimism factor and applies it before use.
 
 ### 7.2 Priority
 
 ```text
 priority = importance · urgency · source
    importance = goal weight (0.2 to 1), or the origin percept's salience for goal-less tasks
-   urgency    = 1.0 under an hour to deadline, 0.7 today, 0.5 this week, 0.3 none;
+   urgency    = from slack (below): 1.0 when slack ≤ 0, 0.7 under an hour of slack, 0.5 under a day, 0.3 no deadline;
                 plus 0.1 per day the task has waited unhandled, up to 0.7
    source     = 1.0 owner, 0.8 expectation missed, 0.7 percept, 0.5 drive, 0.4 sleep
 ```
 
-Recomputed every tick, in code. Engagement for the interrupt test (3.2) is `priority · (0.5 + 0.5 · progress)`.
+Recomputed every tick, in code. Engagement for the interrupt gate is in 3.2.
+
+**Slack** is what makes urgency a number rather than a bucket:
+
+```text
+slack(task) = deadline − now − remaining(task)          remaining from the task's estimate (7.1), calibrated
+```
+
+Negative slack means already late. A task with four hours of work and a six-hour deadline is more urgent than one with
+ten minutes of work and a two-hour deadline, and deadline buckets get that backwards.
+
+**The schedule decision.** Whenever a candidate interrupt passes the gate (3.2), and at every checkpoint (a step
+boundary) over the whole queue, the executive chooses among three options for each candidate against the current
+task: **now**, **at the next checkpoint**, or **after**. It picks the cheapest:
+
+```text
+late(t, start)  = max(0, start + remaining(t) − deadline(t))
+cost(option)    = importance(candidate) · late(candidate, when it would start under this option)
+                + importance(current)   · late(current,   when it would resume under this option)
+                + switchCost · reconstruction(option)      ≈ r now, ≈ 0 at a checkpoint, 0 after
+```
+
+Salience decides whether a percept is worth considering; the schedule decides when. Because the same arithmetic runs
+at every checkpoint over the queue, a task that has quietly become late is picked up without anyone announcing it.
+And because the estimate is in the trace, "this will take about twenty minutes" is something the agent can say to
+the owner and be held to.
 
 ### 7.3 Selection
 
@@ -1355,6 +1427,7 @@ type Deliberation = {
     plan?: Step[] // when the task needs more than one step
     confidence: number // 0 to 1
     needs: 'none' | 'read' | 'ask_owner' | 'ask_person' | 'wait' | 'zoom' | 'split'
+    estimatedMinutes: number // active work for the plan, or for the chosen action alone; calibrated in 7.7
     question?: string // when needs is a question
     zoom?: { question: string; space: SpaceRef; done: CompletionPredicate; expected: string }
     split?: { title: string; done: CompletionPredicate; dependsOn: number[]; deadline?: Date }[]
@@ -1380,6 +1453,19 @@ The rules around the call:
 - **Budget:** a task gets a deliberation budget (default 6 calls), shared out to its zooms and splits. Past it, the task
   blocks and asks the owner. A task that cannot be finished in six thoughts is either too big (split it, which shares
   the six, it does not multiply them) or not the agent's to finish.
+- **Time budget.** Each call also gets a time budget, set before it starts:
+  `min(slack of the task (7.2), the identity's ceiling for this prompt kind, what the wallet allows (6.1))`. The
+  budget maps to the call's settings: tier, reasoning effort, maximum tokens. Care mode raises the ceiling; a task
+  that is already late lowers it and drops a tier. Decision models call this a collapsing bound: as time runs out, the
+  threshold for accepting an answer lowers and you go with less evidence. How long the agent may think is decided by
+  urgency, never by a constant. What happens to a call in flight is in 8.5.
+- **Certainty of what it cites.** Items in working memory carry a certainty: facts a view gave (a sender, an
+  attachment, a keyword in a subject line) are *certain*, since the tool reports what is true now (12.7); facts from
+  interpretation (an intent, an ask) are *hypotheses* until a focused read confirms them (2.3 §4). An action may
+  depend on hypothesis-level items only if its class is `read` or `write_private`. Anything `write_shared` or above
+  must cite only certain or confirmed items, and the runner (8.1) checks the citations' certainty the way it checks
+  permissions. Forwarding an invoice unread is fine when the procedure's trigger is structural (sender, attachment,
+  keyword); composing a summary of what it asks is not, and the draft check (8.3) enforces that for text.
 - **A plan is a proposal.** `plan` becomes the task's steps. Later steps are executed by procedures if one matches,
   otherwise by short deliberations bounded to that step. The plan can be revised at any mismatch.
 - **`needs` is honoured before `chosen`.** If the model says it needs a read, the next action is a focused read (2.4),
@@ -1431,6 +1517,12 @@ After every action (tick step 9), the outcome is compared with `expected`:
 
 Global confidence (6.1) moves a little with every match and mismatch, and it is what the permission matrix reads. An
 agent that has been wrong three times this morning asks before sending; one that has been right all week does not.
+
+**Calibration.** Monitoring also records actual duration against estimated, for every step, procedure and model call.
+From that the agent learns its own **optimism factor** per estimate source (7.1): if deliberated plans run 1.6 times
+longer than estimated, estimates from that source are multiplied by 1.6 before they enter slack and the schedule
+decision. People never manage this; it is the planning fallacy corrected by bookkeeping, and the factor is on the
+learning page (9.9) so the owner can see whether it is converging.
 
 ### 7.8 Ending
 
@@ -1605,13 +1697,40 @@ the working-memory rendering as the only variable part:
 | deliberate                | mid/strong | `deliberate` | `Deliberation` (7.5)                 |
 | write an outbound message | mid        | `compose`    | text plus the ids it drew on         |
 | check a draft             | cheap      | `check`      | list of unsupported claims           |
+| conclude a stopped call   | cheap      | `conclude`   | `Deliberation` from a partial stream |
 | extract facts (sleep)     | mid        | `extract`    | facts, confirmations, contradictions |
 | chunk a history           | cheap      | `chunk`      | one line                             |
 | narrate the trace (10.1)  | cheap      | `explain`    | prose citing tick ids                |
 
-Seven prompts, versioned, with the version stored in every trace. Nothing else calls the model. Salience, recall,
+Eight prompts, versioned, with the version stored in every trace. Nothing else calls the model. Salience, recall,
 priority, procedures, memory writes, the trace: all code. On a quiet day Nia makes a few dozen calls, most of them on
 the cheapest tier, and the debugger can show every one next to the working memory it saw.
+
+**A call is a step with a duration.** It gets what any step gets: an estimate before, monitoring during, calibration
+after (7.7).
+
+- **The latency model.** Per prompt kind and tier, the median and p90 latency, learned from the ledger (every turn is
+  already a row), scaled by the size of the working-memory rendering. This is what makes "wait for it or not"
+  computable.
+- **The tick keeps running.** A call is asynchronous: it is a running step the executive checks at every tick while
+  sensing, perceiving and attending continue. You keep seeing while you think. A percept that arrives mid-deliberation
+  is in working memory when the answer lands, and in-flight interruption is possible at all.
+- **Progress from the stream.** The engine streams and distinguishes phases (thinking, output, tool call). Every tick,
+  `remaining(call)` is re-estimated from elapsed time against the estimate, the phase, and tokens so far, and it feeds
+  the same three-way schedule decision as any task (7.2): let it finish, stop it because a more urgent action needs
+  the slot, or stop it because it is overrunning. A thinking phase past 70% of the time budget is the usual sign of a
+  runaway.
+- **Stopping is not losing the thought.** The stream so far is saved into the frame's scratch as an interrupted
+  thought, and the resumed deliberation starts from it. If the budget is nearly gone and the question still needs an
+  answer, the fallback is a cheap `conclude` call on the partial ("finish from these notes"), or a drop to the fast
+  path, or asking: the collapsing bound (7.5) made concrete. The brain has a dedicated stop circuit that aborts an
+  action about 200 ms after the signal; ours is a cancel with a reason.
+- **It is the agent's money.** A call spends from the wallet (6.7), so the budget drive (6.1) bounds it too: an agent
+  near its daily limit thinks shorter, the way a tired person decides faster and asks more.
+- **The trace records** started, budget, tier and effort, stopped at, why, and what was kept.
+
+`conclude`, the eighth prompt in the table above, takes the partial stream plus the question and returns the same
+`Deliberation` shape with `confidence` capped at 0.6.
 
 ### 8.6 Grounding rules in every prompt
 
@@ -1977,6 +2096,7 @@ What exists, what changes, what is new. Paths are in eldon3 unless marked `h`.
 | The tick             | `run_agent_task` and `respond_to_conversation_message` jobs, one bounded engine run each                                                                                   | one `tick_agent` job per agent, started by an INTERVAL schedule every minute (`h/core/scheduler`, with its lease). Inside, a loop ticks every 5 s while there is work, exits early when idle. Seconds when busy, minutes when quiet, never two at once                                                                                                                                 |
 | Tools and receptors   | Notion registered in `abe_integrations.lib.server.ts`; Google provider exists in `h/core/server/library/integrations` but is not registered; chat via the conversation job | an `AgentTool` install record per agent (tool, version, account binding, subscriptions, cursors, observation policy, matrix rows); receptors as jobs per installed and granted tool (`mail`, `calendar`, `notion`) writing stimuli with cursors; register Google; chat is an tool whose messages are stimuli and whose reply is an owner-sourced task; `timer` stimuli from ONCE schedules |
 | Interpretation       | none                                                                                                                                                                       | `aiEngine.run` with `responseSchema`, cheap tier, batched per tick                                                                                                                                                                                                                                                                                                                     |
+| Model calls in flight | `aiEngine.runStream` with `turn`, `thinking_*`, `text` and `tool_call` events; runs can be cancelled; every turn is an `AiSingleTurnRequest` row                          | deliberation as an asynchronous step beside the tick (8.5): the time budget sets tier and effort; progress from the stream events; cancel with a reason; the latency model and the optimism factors computed from the request rows                                                                                                                                                       |
 | Memory stores        | `AgentContext` with `requests[]` and stub `frames[]`; transcript replay of 20 to 50 requests                                                                               | new `EldonModel`s: `AgentStimulus`, `AgentPercept`, `AgentEpisode`, `AgentEntity`, `AgentFact` (with an `owner: agent \| team` column from day one, 11.4), `AgentProcedure` (with guards), `AgentExpectation`, `AgentTick`. `AgentContext` keeps only the conversation scope (`installedTools` moves to `AgentTool`, 8.4); replay is removed. Raw payloads to `eldon_file_store`        |
 | Recall               | none                                                                                                                                                                       | SQL over the stores: entity join table, activation as a computed column, Postgres full-text on summaries. `pgvector` later, behind the same interface                                                                                                                                                                                                                                  |
 | Tasks                | `AgentTask` with a cron, `AgentTaskRun`, artifacts                                                                                                                         | `AgentTask` gains `origin`, `priority`, `state`, `steps`, `frame`. Owner-scheduled tasks stay: a cron becomes a standing goal plus timer stimuli. Runs and artifacts become episodes                                                                                                                                                                                                   |
@@ -2106,13 +2226,10 @@ arithmetic (4.5, 5.4), the reward scales (9.4), the runner's duties (8.1), and f
 
 - **Depth defaults** (3.6): four deliberate levels and one live interrupt are guesses until the harness measures
   resumption errors and reconstruction cost.
-- **Engagement as reconstruction cost** (3.2): the formula needs a concrete estimate; frame depth and unchunked history
-  length are the first candidates.
-- **Team store conflicts** (11.4 §1): when two agents' facts disagree and both are confident, whose brief asks the
-  question.
-- **Focused reads as the only source of certainty** (2.3 §4): a percept can be routed on a hypothesis, but some
-  procedures will want to act on peripheral data alone (forward without reading). Which action classes may act on
-  unconfirmed hypotheses is a permission question the matrix does not yet ask.
+- **The weights in `r`** (3.2) and the **optimism factors** (7.7): both are learned or calibrated in the harness, and
+  the first numbers are guesses until then.
+- **Cycle detection thresholds** (5.2 §4): three occurrences and a "tight" spread need a definition once there is
+  data on how regular real places are.
 
 ### 11.6 Decisions from the second review: tools
 
@@ -2370,3 +2487,22 @@ The fourth time, in October, as a procedure: trigger "want attachment of the new
 invoice", steps `open(thread)`, `open(last message)`, `read(attachment at bottom)`, fast path, no model call, 300 ms.
 The map made the deliberation unnecessary, and the scan path made the read cheap. That is the difference between
 knowing that the invoice exists and knowing where it lives.
+
+### 11.8 Decisions from the fourth round: time
+
+Five threads left open by the third round, plus one the author added, settled in conversation and written in:
+
+1. **Rates and schedules.** Diffuse change is a rate (2.9); sharp change is a recurring expectation found by sleep
+   (5.2 §4) and used by the glance scheduler as a timed arrival. A missed cycle is an anomaly.
+2. **Engagement is reconstruction cost**, made of frame depth, unchunked history and being mid-operation (3.2), with
+   weights calibrated against post-resume deliberations.
+3. **Acting on hypotheses.** What a view gives is certain; what interpretation gives is a hypothesis until read. Actions
+   of class `write_shared` and above cite only certain or confirmed items, checked by the runner (7.5).
+4. **Team-store conflicts.** The agent whose publish created the conflict asks the entity's owner or the team admin,
+   once, for everyone (5.2 §4).
+5. **A reliable tool that goes quiet** is an anomaly, not just a lower reliability score (2.9).
+6. **Time is in the equation.** Every task and every model call carries a duration estimate (7.1, 8.5), urgency comes
+   from slack (7.2), the interrupt gate feeds a three-way schedule decision (now, next checkpoint, after) that weighs
+   lateness on both sides against reconstruction (3.2, 7.2), and estimates are calibrated by a learned optimism
+   factor (7.7). Model calls run beside the tick with a time budget set from slack, are assessed in flight from the
+   stream, can be stopped with the partial kept, and can be concluded cheaply from what was kept (8.5).
