@@ -32,7 +32,7 @@ tool a drop-in (8.8); a **role** binds a learned skill to an instance (8.8). The
 operations agent, her owner **Kam**, and a supplier invoice from **Acme**; keep using them.
 
 **Where things are.** The brain-to-component map is 1.3; the tick is 1.4; the principles are 1.6. Decisions and their
-reasons are 11.4 to 11.8 by round; what is still open is 11.5; what was considered and turned down is 11.9. The
+reasons are 11.4 onward, one section per round; what is still open is 11.5; what was considered and turned down is 11.9. The
 brainstorm the design grew from is `abe_brainstorm.md` beside this file.
 
 **What the design is not.** Not a simulation of neurons. Not an LLM with a long prompt: the model is one organ (8.5),
@@ -91,6 +91,7 @@ keep Kam's inbox handled, keep the team's weekly plan in Notion up to date, and 
 | Hippocampus                          | **Episodic memory** | What happened, when, with whom, how it went                                     |
 | Hippocampus, place cells | **Map** | Places, containment, links, moves; learned by wandering (Chapter 12) |
 | Parietal cortex | **View** | What is in front of the agent now: items in a frame, given by the tool |
+| Hippocampal time cells, temporal context | **Timeline** | When: a grain hierarchy over every memory, log-compressed with age (Chapter 13) |
 | Neocortex                            | **Semantic memory** | Entities and facts with confidence: people, projects, documents, rules          |
 | Basal ganglia, cerebellum            | **Procedures**      | Compiled skills that run without deliberation                                   |
 | Prefrontal cortex, schemas | **Patterns** | The shape of situations, what was tried there and how it went, what is typical (4.11) |
@@ -197,6 +198,7 @@ procedure ("forward supplier invoices to Kam with a one-line summary") is the li
 10. Debugger, safety, and the eldon3 mapping
 11. Milestones and the test harness
 12. Space and navigation
+13. Time
 
 ---
 
@@ -318,7 +320,10 @@ stages do the bulk of the work, and the model sees only what survives.
 
 1. **Receptor.** Source-specific parsing: ids, timestamps, headers, participants, thread ids, diffs. Deterministic.
    Produces the `Stimulus` and the skeleton of the `Percept`.
-2. **Features.** Mentions, dates, amounts, URLs, reply markers, "urgent" tokens, language. Regex and parsers.
+2. **Features.** Mentions, dates, amounts, URLs, reply markers, "urgent" tokens, language. Regex and parsers. Time
+   expressions ("two weeks ago", "on Monday", "at 5:15", "in 1965", "today") become a **time range at a grain**, and
+   place expressions ("in Notion", "in the Acme thread") become a **subtree of the map**; both are cues for recall
+   (13.4).
 3. **Recognition.** Entity resolution against semantic memory. Identifiers first (email address, page id, calendar id),
    then names. A match fills `actor` and `entities`. When neither matches, a third pass identifies **by pattern**
    (4.11): the percept's behaviour (its pace, timing, place, style) is matched against the patterns of known entities,
@@ -798,7 +803,13 @@ type Fact = {
     id: string
     subject: EntityRef
     attribute: string // "pays_in_days", "prefers", "works_on", "reports_to"
-    values: { value: unknown; p: number }[] // a distribution; values can be entity refs
+    values: {
+        value: unknown // values can be entity refs
+        p: number // the distribution over values, as now
+        observed: { at: Date; source: EpisodeRef }[] // every time this value was seen
+        since: Date // current from its first observation…
+        until?: Date // …until an observation contradicted it (13.3); absent while current
+    }[]
     confidence: number // how much evidence stands behind the distribution
     sources: EpisodeRef[]
     firstSeen: Date
@@ -887,7 +898,8 @@ A = B + Σ over cues c in working memory of  S(c, item)
 ```
 
 where `S` is a fixed strength for each kind of match: same place 1.0, same entity 0.7, parent or child place 0.5, related entity one hop away
-0.3, same tool instance 0.2, text similarity scaled to 0 to 0.5.
+0.3, same tool instance 0.2, text similarity scaled to 0 to 0.5; and, when the cue names a time (13.4), inside the
+asked range at its grain 0.6, in the neighbouring range 0.3.
 
 A few consequences, and they are the ones we want:
 
@@ -906,8 +918,9 @@ recalled often should stay easy to find and easy to correct, not become truer.
 Recall is step 7 of the tick. Its cue is the content of working memory: the attended percepts' entities, threads and
 spaces, the current task's goal, and the text of the percept if any. It runs in three passes, all deterministic:
 
-1. **Index lookup.** Episodes, facts and procedures that reference the cued entities, threads or spaces directly. This
-   is the hippocampal index: entity to everything that touched it.
+1. **Index lookup.** Episodes, facts and procedures that reference the cued entities or places directly, and, when
+   the question names a time, that fall in the cued range at its grain (13.4). This is the hippocampal index: entity,
+   place and time to everything that touched them.
 2. **Spreading.** One hop along relation facts from the cued entities (Acme → its people, its project, "supplier"), and
    the items those touch, at lower strength. This is pattern completion: a sender's address brings back the invoice, the
    deal, and the last time it went wrong.
@@ -932,6 +945,11 @@ was at ten; it moved to nine-thirty on Sept 12".
 Two limits keep this from turning noise into belief. A percept moves a given fact at most once a day, by a bounded step;
 the bulk of the evidence is weighed at sleep (5.2 §2), where a day's worth can be seen together. And a statement from
 the owner moves it at once and fully, because a correction that arrives at nine must hold at ten.
+
+One kind of fact is created in the tick rather than at night: a **provisional fact** from a focused read that answered
+an ask. Nia reads the result of the match for Kam at 10:00; the fact `match —result→ 2–1, observed 10:00` exists at
+10:01, at stranger confidence (9.2), with the episode as its source, and sleep promotes or drops it like a candidate
+entity (4.2). Without this, an answer she gave five minutes ago would live only in an episode summary until night.
 
 ### 4.8 What is not memory
 
@@ -1171,11 +1189,13 @@ agent's confident fact, this agent asks: the entity's owner if a person on the t
 the team admin, in its next brief. The store marks the conflict "asked by Nia" so no other agent asks again, and the
 answer resolves it for everyone. The team page lists open conflicts beside leases (8.9).
 
-**5. Compact.** Episodes older than seven days with activation below the compaction threshold are grouped by task or
-thread and day, summarised into one **block** episode, and marked `block = <id>`. Their detail leaves the hot store (raw
-payloads go cold, summaries survive inside the block). Facts whose sources were compacted are re-pointed at the block,
-so a fact does not lose its evidence just because the evidence was summarised. This is the brainstorm's memory
-compacting; the one change is that facts survive compaction as long as the block does.
+**5. Compact.** Episodes older than seven days with activation below the compaction threshold are grouped by place and
+by time grain, summarised into one **block** episode, and marked `block = <id>`. Blocks form a hierarchy (episode ⊂
+task ⊂ day ⊂ week ⊂ month ⊂ year), with the older grains compacted further as they age; Chapter 13 gives the
+schedule and what it means for recall. Their detail leaves the hot store (raw payloads go cold, summaries survive
+inside the block). Facts whose sources were compacted are re-pointed at the block, so a fact does not lose its
+evidence just because the evidence was summarised. This is the brainstorm's memory compacting; the one change is that
+facts survive compaction as long as the block does.
 
 **6. Prune.** The actual forgetting:
 
@@ -2304,7 +2324,7 @@ What exists, what changes, what is new. Paths are in eldon3 unless marked `h`.
 | Tools and receptors   | Notion registered in `abe_integrations.lib.server.ts`; Google provider exists in `h/core/server/library/integrations` but is not registered; chat via the conversation job | an `AgentTool` install record per agent (tool, version, account binding, subscriptions, cursors, observation policy, matrix rows); receptors as jobs per installed and granted tool (`mail`, `calendar`, `notion`) writing stimuli with cursors; register Google; chat is a tool whose messages are stimuli and whose reply is an owner-sourced task; `timer` stimuli from ONCE schedules |
 | Interpretation       | none                                                                                                                                                                       | `aiEngine.run` with `responseSchema`, cheap tier, batched per tick                                                                                                                                                                                                                                                                                                                     |
 | Model calls in flight | `aiEngine.runStream` with `turn`, `thinking_*`, `text` and `tool_call` events; runs can be cancelled; every turn is an `AiSingleTurnRequest` row                          | deliberation as an asynchronous step beside the tick (8.5): the time budget sets tier and effort; progress from the stream events; cancel with a reason; the latency model and the optimism factors computed from the request rows                                                                                                                                                       |
-| Memory stores        | `AgentContext` with `requests[]` and stub `frames[]`; transcript replay of 20 to 50 requests                                                                               | new `EldonModel`s: `AgentStimulus`, `AgentPercept`, `AgentEpisode`, `AgentEntity`, `AgentFact` (with an `owner: agent \| team` column from day one, 11.4), `AgentProcedure` (with guards), `AgentPattern` (4.11), `AgentExpectation`, `AgentTick`. `AgentContext` keeps only the conversation scope (`installedTools` moves to `AgentTool`, 8.4); replay is removed. Raw payloads to `eldon_file_store`        |
+| Memory stores        | `AgentContext` with `requests[]` and stub `frames[]`; transcript replay of 20 to 50 requests                                                                               | new `EldonModel`s: `AgentStimulus`, `AgentPercept`, `AgentEpisode`, `AgentEntity`, `AgentFact` (with an `owner: agent \| team` column from day one, 11.4), `AgentProcedure` (with guards), `AgentPattern` (4.11); every store carries `at` plus derived grain columns and a `block` parent (13.2), `AgentExpectation`, `AgentTick`. `AgentContext` keeps only the conversation scope (`installedTools` moves to `AgentTool`, 8.4); replay is removed. Raw payloads to `eldon_file_store`        |
 | Recall               | none                                                                                                                                                                       | SQL over the stores: entity join table, activation as a computed column, Postgres full-text on summaries. `pgvector` later, behind the same interface                                                                                                                                                                                                                                  |
 | Tasks                | `AgentTask` with a cron, `AgentTaskRun`, artifacts                                                                                                                         | `AgentTask` gains `origin`, `priority`, `state`, `frames`, `estimate`. Owner-scheduled tasks stay: a cron becomes a standing goal plus timer stimuli. Runs and artifacts become episodes                                                                                                                                                                                                   |
 | Identity             | `Agent`: name, description, `systemInstructions[]`                                                                                                                         | `Agent` gains an `identity` JSON column (6.6) with a hand `ALTER TABLE`; `systemInstructions` become `rules`. Versioned by a small `AgentIdentityVersion` model                                                                                                                                                                                                                        |
@@ -2564,6 +2584,23 @@ scattered (recall by entity, procedures, guards, change rates, usually-at) and t
 6. **Over-generalisation** is held by the guard rules: three episodes to exist, ten observations before a regularity
    can raise an anomaly or a question, decay, and slots only as specific as the episodes agree on.
 
+### 11.12 Decisions from the seventh round: time
+
+The author asked what part of the design answers a repeated question from memory rather than by reading again, and
+turned down a `validUntil` field on facts in favour of linking everything to time with a grain to choose at query time,
+and treating space the same way. Settled:
+
+1. **Time is a grain hierarchy** derived on every row, indexed, queried at any grain; two clocks, happened and learned
+   (13.2).
+2. **Facts are observations over time**; validity is derived from the next observation; staleness is judged at answer
+   time from the source place's change rate (13.3, 4.2).
+3. **Provisional facts** from reads that answered an ask are created in the tick and promoted at sleep (4.7).
+4. **Time and place are recall cues**, parsed by features, resolved nearest first, widened to periodic on request
+   (13.4, 2.3 §2, 4.5, 4.6).
+5. **The block hierarchy is the log-compressed timeline**, keyed by time grain and place, zoomable like frames,
+   scheduled per identity (13.5, 5.2 §5).
+6. Rendering at grain (13.6); cycles, landmarks and pace as time at work (13.7).
+
 ---
 
 ## 12. Space and navigation
@@ -2773,4 +2810,141 @@ The fourth time, in October, as a procedure: trigger "want attachment of the new
 invoice", steps `open(thread)`, `open(last message)`, `read(attachment at bottom)`, fast path, no model call, 300 ms.
 The map made the deliberation unnecessary, and the scan path made the read cheap. That is the difference between
 knowing that the invoice exists and knowing where it lives.
+
+
+---
+
+## 13. Time
+
+The brainstorm named three universal concepts: entities, time, space. Chapter 12 gave space its due; until now time
+was a timestamp on a row. This chapter makes it what it is for people: a dimension you can ask about at any grain
+("two weeks ago", "on Monday", "at 5:15", "in 1965"), that facts move along, that recall cues on, and that the
+memory itself is organised by, finer for the recent past and coarser for the distant one.
+
+### 13.1 How the brain keeps time
+
+Nobody remembers timestamps. People locate events by **landmarks** ("before the trip", "the week of the move") and by
+**cycles** (Monday, after lunch, summer), and the hippocampus has cells that fire at particular moments within an
+episode, laying down a slowly drifting temporal context alongside every memory. Two measured properties matter here.
+Memories close in time are retrieved together (temporal contiguity: recalling one brings its neighbours). And the
+timeline is **log-compressed**: the last hour is remembered in minutes, last week in days, last year in months, 1965
+as a year, with detail lost at each scale. That is not a defect; it is how a finite memory covers a lifetime.
+
+### 13.2 The grain hierarchy
+
+Time nests the way place does (12.2):
+
+```text
+instant ⊂ minute ⊂ hour ⊂ part of day ⊂ day ⊂ week ⊂ month ⊂ season ⊂ year ⊂ era
+```
+
+Every memory row (episode, fact observation, percept, tick, block) has one `at`, and its membership at every grain is
+**derived and indexed**: minute of day, hour of day, part of day, weekday, day, ISO week, month, season, year. Nothing
+is declared per row; the columns are computed on write, so a range at any grain is an index scan. The hour-of-week
+buckets of the change model (2.9) are one use of the same columns.
+
+Two clocks are kept apart, as they are on percepts (2.5): when it **happened** (`at`) and when the agent **learned**
+of it (`sensedAt`). "What did I learn on Monday" and "what happened on Monday" are different questions, and both are
+answerable.
+
+### 13.3 Facts move along time
+
+A fact is not a value with an expiry; it is a value **with the times it was observed**, and it is current until an
+observation contradicts it (4.2):
+
+```text
+standup —at→ 10:00   observed Aug 3, Aug 10, Sept 5      since Aug 3    until Sept 12
+standup —at→ 09:30   observed Sept 12, Sept 19            since Sept 12
+match —result→ 1–0   observed 10:00                        since 10:00    until 10:05
+match —result→ 2–1   observed 10:05                        since 10:05
+```
+
+Validity is never declared; it is **derived from the next observation**. A question with a time in it ("what was the
+standup time in August") selects the value current then. A question without one takes the current value, and the
+deliberation judges whether it is **stale**: the age of the last observation against the change rate of the place it
+came from (2.9). A final result from a page that never changes is good forever; a live score from a page that changes
+every minute is stale in two. The same comparison the glance scheduler makes, made again at answer time. No `validUntil`,
+because the world does not come with one.
+
+Values that were current once and are not now are not deleted; they are the fact's history, which is what lets Nia say
+"it moved to nine-thirty on Sept 12" (4.7).
+
+### 13.4 Asking about time
+
+Features (2.3 §2) parse a time expression into a **range at a grain**, and recall (4.6) cues on it with its own
+strengths (4.5). The resolution rules:
+
+| Expression        | Grain         | Range                                                  |
+| :---------------- | :------------ | :----------------------------------------------------- |
+| "today", "now"    | day / instant | this day; "now" also means "the current value" (13.3)  |
+| "two weeks ago"   | week          | the ISO week two before this one                       |
+| "on Monday"       | weekday       | **nearest first**: the most recent Monday               |
+| "at 5:15"         | minute of day | nearest first: today at 5:15, then yesterday…          |
+| "in 1965"         | year          | that year                                              |
+| "last summer"     | season        | the previous June to August in the owner's hemisphere  |
+| "Mondays", "every day at 5:15" | periodic | the **widened knob**: all matches of the grain, used when the question says so or nearest-first finds nothing |
+
+Nearest first is the default because it is what people mean; the periodic reading is the knob turned wider. A
+question that names both a time and a place ("what happened with Acme two weeks ago in Notion") is three cues on one
+lookup, all indexed, no model. And temporal contiguity comes free: an episode found by time brings its neighbours in
+the same block at lower strength, the way recalling one thing from that afternoon brings back the rest of it.
+
+### 13.5 The timeline is log-compressed
+
+Compaction (5.2 §5) is the mechanism; this is its schedule and its meaning. Blocks form a hierarchy keyed by time
+grain and place, and each grain is compacted as it ages:
+
+| Age of the memory | Grain kept in the hot store               | What survives                                            |
+| :---------------- | :---------------------------------------- | :------------------------------------------------------- |
+| under 7 days      | every episode                             | everything                                               |
+| 7 days to 6 weeks | task and day blocks                       | day summaries; episodes above the activation threshold   |
+| 6 weeks to a year | week blocks                               | week summaries; pinned and high-activation episodes      |
+| 1 to 5 years      | month blocks                              | month summaries; pinned; anything a fact still cites     |
+| older             | year blocks                               | a year in a paragraph; pinned; facts' sources            |
+
+A block is an episode (4.1) with `until` set, a summary written at compaction, and links to its surviving children.
+Forgetting (5.2 §6) prunes leaves below the activation threshold; blocks live longer than their children; pinned
+survives at every grain. So "1965" resolves to a year block with a summary, and the agent can **zoom into time** the
+way a frame zooms into place (3.6): read the finer grain if it still exists. The same focus mechanics, the same
+breadcrumbs, one dimension over.
+
+The schedule above is per identity (6.6, `forgetting`): a compliance agent keeps day blocks for a year; a triage agent
+compacts in days. Place is the second key: a thread's episodes compact together, and a whole tool instance can be
+compacted or pruned when the tool is uninstalled, which is the grouping and pruning by space that the map (12.5) needs.
+
+### 13.6 Rendering at grain
+
+A recalled item renders at the grain of the question. An episode from two weeks ago renders itself; one from 1965
+renders its year block unless the deliberation zooms (`needs: 'zoom'` into a block is a read-class move, 12.4). That
+keeps working memory small when the question is coarse, and it is why "what did we do in 2024" costs one line per
+month, not a thousand episodes.
+
+### 13.7 Cycles, landmarks, and the sense of when
+
+Three things the rest of the document already does are, in this chapter's terms, time at work:
+
+- **Cycles** are recurring expectations found by prospect (5.2 §4, 2.9): the plan page on Mondays, the invoice on the
+  first. They are grain-of-weekday and grain-of-month regularities (4.11), and a missed one is an anomaly.
+- **Landmarks** are span episodes with high activation: the office move, the week the model was down. Recall by
+  contiguity means "around the time of the move" works without a date, because the move's block is a neighbour.
+- **Pace** (6.1) is the agent's sense of tempo, and slack (7.2) is time to a deadline minus the work; both are
+  computed on the same columns.
+
+### 13.8 Kam asks who won
+
+10:00. "Who won the United game today?" Features: time = today, day grain; entity = Manchester United (or a candidate).
+Recall: nothing current. Deliberation: `needs: 'read'`; a focused `navigable:find` on the web tool; the result comes
+back as an outcome percept, place = the score page. Compose, answer. Episode written; a provisional fact (4.7):
+`match —result→ 2–1, observed 10:00, source E-…`; the page's change model starts from the trait prior for "live
+score" (a few changes an hour).
+
+10:05. Same question. Features: today. Recognition: the entity resolves. Priming warms the episode; recall pass 1
+finds the episode (same day, same entity) and the provisional fact. Staleness: the last observation is five minutes
+old; the page's rate says a change in five minutes is likely if the match is on, unlikely if it is over. The episode
+says the read was of a *final* result: the deliberation answers from memory, citing the fact, no read. Had the read
+been of a live score, the same rule would have said read again, and the fact would gain a second observation.
+
+Next Saturday. "Who won?" No day named: nearest first finds today, nothing; the widened knob finds last Saturday's
+fact, and the deliberation asks whether he means today's match, which it then reads. And by the fourth Saturday,
+prospect has a cycle: Kam asks about United on Saturday evenings, and she has read the result before he asks.
 
