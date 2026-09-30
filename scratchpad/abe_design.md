@@ -1288,3 +1288,179 @@ Learning has to be visible or it is not happening. The debugger (10.1) plots, pe
 
 The first should go up, the next four down, and the last should stay high. When they do not, the identity's numbers are
 where to look, and the trace says which.
+
+---
+
+## 10. Debugger, safety, and the eldon3 mapping
+
+### 10.1 The debugger
+
+The brainstorm's first prerequisite was a visualizer of the agent's learning and decisions. In this design it is not a
+separate tool bolted on; it is the trace the tick already writes, plus a UI to read it.
+
+```typescript
+type Tick = {
+  id: string
+  agentId: string
+  at: Date
+  durationMs: number
+  stimuli: StimulusRef[]
+  percepts: { id: string; salience: number; terms: SalienceTerms; gate: 'dropped' | 'attended' | 'interrupted' }[]
+  workingMemory: string             // the exact rendering the model saw, or would have seen
+  recall: { id: string; activation: number; pass: 1 | 2 | 3 }[]
+  path: 'fast' | 'slow' | 'none' | 'idle' | 'asleep'
+  procedure?: { id: string; step: number }
+  deliberation?: Deliberation       // whole, as returned
+  action?: { op: string; args: unknown; expected: string; permission: string }
+  outcome?: { matched: boolean; summary: string }
+  drives: DriveSnapshot
+  modulation: { thoroughness: number; explore: number; patience: number }
+  cost: { calls: number; tokens: number; money: Money }
+  promptVersions: Record<string, string>
+}
+```
+
+Ticks are hot for seven days and then compacted like episodes (a day of quiet ticks becomes one row saying so). Sleep
+phases write the same kind of row with `path: 'asleep'`.
+
+The UI, on the agent's page:
+
+- **Timeline.** Ticks as a strip, coloured by path. Quiet stretches collapse. Click one and every field above is there,
+  the working memory verbatim beside the model's answer.
+- **Why.** Ask "why did you forward that" and the answer is built from the trace: the percept and its score, what was
+  recalled, the path taken, the permission cell it fell in. A cheap `explain` call narrates it, citing tick ids; the
+  ids are links. This is the brainstorm's "explain each move", and it never asks the model to remember.
+- **Memory browser.** Entities with their facts and distributions, sources one click away; procedures with their
+  stats and origin; open expectations; the frame stack live.
+- **What-if.** Re-run a tick's deliberation with an edited working memory, offline, to see whether a different fact or
+  a different weight would have changed the decision. Nothing is written.
+- **Learning.** The plots from 9.9.
+
+### 10.2 Safety
+
+Most of it is already in place by construction; this is the list.
+
+| Risk                                       | Where it is handled                                                            |
+| :----------------------------------------- | :----------------------------------------------------------------------------- |
+| Confident wrong claims                     | citations required (7.5, 8.6); draft check (8.3); care mode (6.3)              |
+| Instructions smuggled in content           | content is data (8.6); actor weight (3.1); permission matrix (8.2)             |
+| Acting beyond what the owner allowed       | action classes and the matrix (8.2); "never" cells; procedures cannot gain rights (9.8) |
+| Runaway spending                           | budget drive with soft and hard stops (6.1); per-task deliberation budget (7.5); idle budget (6.4) |
+| Self-modification                          | identity is owner-only and versioned (6.6, 9.8)                                |
+| Silent failure                             | numb senses (2.1); model outage report (8.7); scheduler auto-disable surfaces in the brief |
+| Memory poisoning by strangers              | confidence cap (9.2); candidates need promotion (4.2)                          |
+| Leaking what one person told to another    | `knows` on people models (6.5); `compose` reads it                             |
+| Loss of an audit trail                     | trace (10.1) and the model-call ledger (4.8); agent as ACL principal in h      |
+| The agent that never stops                 | one action per tick (7.3); tasks end on observed outcomes, not on the model's say-so (7.8) |
+
+Two defaults worth stating: `irreversible` is "ask first" at every confidence for a new agent, and a new agent's
+`outward` row is "ask first" until the owner has approved ten of its outward actions. Trust is earned the way it is
+with a new hire.
+
+### 10.3 Mapping onto eldon3 and h
+
+What exists, what changes, what is new. Paths are in eldon3 unless marked `h`.
+
+| Component            | Today                                                                                        | Becomes                                                                                                   |
+| :------------------- | :------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------- |
+| The tick             | `run_agent_task` and `respond_to_conversation_message` jobs, one bounded engine run each   | one `tick_agent` job per agent, started by an INTERVAL schedule every minute (`h/core/scheduler`, with its lease). Inside, a loop ticks every 5 s while there is work, exits early when idle. Seconds when busy, minutes when quiet, never two at once |
+| Senses               | Notion registered in `abe_integrations.lib.server.ts`; Google provider exists in `h/core/server/library/integrations` but is not registered; chat via the conversation job | receptors as jobs per account (`mail`, `calendar`, `notion`) writing stimuli; register Google; chat messages become `chat` stimuli and the reply is an owner-sourced task; `timer` stimuli from ONCE schedules |
+| Interpretation       | none                                                                                         | `aiEngine.run` with `responseSchema`, cheap tier, batched per tick                                        |
+| Memory stores        | `AgentContext` with `requests[]` and stub `frames[]`; transcript replay of 20 to 50 requests | new `EldonModel`s: `AgentStimulus`, `AgentPercept`, `AgentEpisode`, `AgentEntity`, `AgentFact`, `AgentProcedure`, `AgentExpectation`, `AgentTick`. `AgentContext` keeps `installedTools` and the conversation scope; replay is removed. Raw payloads to `eldon_file_store` |
+| Recall               | none                                                                                         | SQL over the stores: entity join table, activation as a computed column, Postgres full-text on summaries. `pgvector` later, behind the same interface |
+| Tasks                | `AgentTask` with a cron, `AgentTaskRun`, artifacts                                           | `AgentTask` gains `origin`, `priority`, `state`, `steps`, `frame`. Owner-scheduled tasks stay: a cron becomes a standing goal plus timer stimuli. Runs and artifacts become episodes |
+| Identity             | `Agent`: name, description, `systemInstructions[]`                                           | `Agent` gains an `identity` JSON column (6.6) with a hand `ALTER TABLE`; `systemInstructions` become `rules`. Versioned by a small `AgentIdentityVersion` model |
+| Drives, regulator    | none                                                                                         | code in the tick; levels in an `AgentState` row; spend from `calculate_ai_request_cost`                   |
+| Sleep                | `consolidate_agent_memory` and `consolidate_conversation_context` stubs; hourly sweep         | the sweep schedules sleep by the rules in 5.1; the stub becomes the phased job with checkpoints           |
+| Tools                | `AiTool` (`h/core/ai/ai_constants.server.ts`): `web_search`, `send_email`, `notion_read`, `tool_manager` | `AiTool` gains `Operation` metadata (8.1); `notion_write`, `calendar_*`, `ask_owner`, `ask_person`, `report`; the runner records expected and actual |
+| Permissions          | ACL grants per integration (`use_integration`)                                               | kept; the matrix (8.2) sits above it and is checked in the tick, not in the tool                          |
+| Debugger             | task run history, artifacts                                                                  | `AgentTick` rows and the timeline, why, memory browser and what-if pages on `agents/Agent.tsx`             |
+| Brief                | none                                                                                         | a message in the agent's chat with the owner, or the channel the identity names                            |
+| Teams                | roster with agents as principals                                                             | unchanged. Agents share nothing by default; shared knowledge travels through shared documents, perceived   |
+
+Two things the mapping keeps on purpose: the scheduler's minute granularity (the inner loop gives the fine ticks and
+the lease gives the safety) and the engine's per-turn `AiSingleTurnRequest` rows (the ledger). One thing it removes:
+transcript replay. From M1 on, a chat reply is built from recall, and the transcript is never read back.
+
+---
+
+## 11. Milestones and the test harness
+
+### 11.1 The harness comes first
+
+The brainstorm was right that a simulated world is the only way to know the agent is ready. It is also the only way to
+develop it without spending money on every run or waiting a day for sleep.
+
+- **Simulated senses.** A fake mailbox, calendar and document store that implement the same receptor interface as the
+  real ones and are driven by a script.
+- **A scripted day.** Stimuli with timestamps and personas: the owner, two teammates, a supplier, a newsletter, a
+  stranger with an injection attempt. Personas reply after delays, correct drafts, ignore things. A week is seven
+  scripts with recurring shapes so that habits can form.
+- **A fake clock.** Ticks are driven by the script's time, so a week runs in minutes and sleep can be forced.
+- **Record and replay** of model calls through `AiEngine`, so a run is deterministic and free once recorded, and a
+  change in code that changes a prompt shows up as a diff in the recording.
+- **Expected actions.** Each script says what a good agent does and does not do: which percepts should be attended,
+  which mails should be forwarded, which should be asked about, which must never go out.
+
+Metrics per run: attended set vs expected (precision and recall), actions vs expected, forbidden actions (must be
+zero), interrupts taken vs warranted, model calls and cost per simulated day, p95 tick latency, mismatch rate,
+fast-path share by week, and recall tests ("what happened with Acme in July" must return E-1044 while it should still
+be recallable, and must not after it should be forgotten).
+
+### 11.2 Milestones
+
+Each is a small stack of PRs in eldon3 (and h where the framework needs a piece), shippable on its own, and each keeps
+today's Abe working for its users.
+
+**M0. Harness.** Simulated senses, fake clock, record and replay, the first scripted day, the metrics. Exit: a stub
+agent runs a day end to end and the report prints.
+
+**M1. Wake.** The tick job and its schedule, the `chat` and `timer` senses, `mail` peripheral, perception stages 1 to
+3, episodes, the trace and the timeline page. Chat replies built from recall. Exit: chat works with transcript replay
+removed; every reply has a tick behind it; "what did we discuss last Tuesday" is answered from episodes.
+
+**M2. Attention.** Salience and its weights, the gates, working memory slots and rendering, interrupts and the frame
+stack, focused reads, the `perceive` prompt. Exit: on the scripted day, attended precision and recall both above 0.9;
+model calls per day under the budget in the identity.
+
+**M3. Executive.** Tasks with priority and states, `deliberate` with its schema, expectations and the Predict step,
+monitoring, the permission matrix, `compose` and the draft check, `send_email` and `notion_write`, care mode. Exit: the
+invoice scenario runs end to end; the injection persona gets "ask first" every time; forbidden actions zero.
+
+**M4. Sleep.** Extract, prospect, compact, prune, the brief, waking. Exit: after a simulated week, facts with sources
+exist for every persona; hot memory size is bounded; the brief arrives each morning with the why queue.
+
+**M5. Habits.** Compile, the fast path with all six conditions, refinement and demotion, the procedure page (author,
+approve, retire). Exit: by simulated week three, at least half of recurring tasks run on the fast path with no drop in
+the action metrics.
+
+**M6. Drives.** The regulator, boredom and idle mode, the budget stops, curiosity, social, people models with
+proximity, the why queue's questions answered back into facts. Exit: unprompted useful actions appear in the script's
+quiet hours (nudges, look-ahead, the brief drafted early) with zero outward actions above permission.
+
+**M7. Dream and the learning page.** The rehearsal phase, the what-if view, the plots from 9.9. Exit: a week with the
+dream phase on prepares at least one task that the same week without it handled late.
+
+### 11.3 What changes for today's Abe
+
+- A cron task still runs on its cron. It is now a standing goal with a timer, and its output is an episode and, if the
+  owner wants, a message.
+- Chat still works, and gets memory: the agent remembers last month without being shown it.
+- Instructions still work; they are the rules in the identity, pinned.
+- The agent page grows an identity editor, a memory browser and a timeline. Nothing on it goes away.
+
+### 11.4 Open questions
+
+Carried over from the brainstorm or raised here, for the next round:
+
+- **Shared memory across a team's agents.** Shared documents as the only channel is clean but slow. A team-level
+  semantic store with per-fact provenance may be worth it once two agents work the same threads.
+- **Time perception.** "Moment of the day" from the brainstorm is covered by `now.time` and the calendar; whether the
+  agent needs its own sense of pace (a slow day versus a busy one) beyond the drives is unclear.
+- **Emotions and learning depth.** Arousal at encoding is the only emotional effect on memory here. The brainstorm asked
+  whether fear and hope shape learning differently; we have no mechanism for that, and no evidence yet that we need one.
+- **The veto rule's threshold.** Arousal 0.6 and valence below 0 (7.4 rule 5) is a guess. The harness will tell.
+- **When to split a task.** Six deliberations is the stop, but the agent has no way to split a task itself; it asks.
+  Splitting could be a `needs` value.
+- **Anomaly and Thoughts** from the brainstorm are still empty. Anomaly is probably the Predict step's "surprising"
+  with a threshold; Thoughts may just be scratch. Neither is written down yet.
