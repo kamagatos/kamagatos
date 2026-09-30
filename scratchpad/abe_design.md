@@ -880,3 +880,180 @@ Two rules about identity:
   the one failure mode we do not want to debug.
 - **It is short.** The `self` rendering is about 200 tokens. Everything longer belongs in semantic memory as facts,
   where it can be recalled when relevant instead of carried on every tick.
+
+---
+
+## 7. Executive: goals, planning, action selection, monitoring
+
+The prefrontal cortex holds goals and breaks them into steps. The basal ganglia pick one action from the candidates and
+inhibit the rest. The anterior cingulate watches for errors and conflict and, when it sees them, pulls the slow,
+deliberate system in over the fast, habitual one. The cerebellum predicts what an action will feel like before it lands.
+This chapter is those four things.
+
+### 7.1 Goals, tasks, steps
+
+```text
+Identity  →  Standing goals  →  Tasks  →  Steps  →  Atomic operations
+             (owner-set,        (instances,   (planned by     (tools, Chapter 8)
+              persistent)        transient)    a procedure or
+                                               a deliberation)
+```
+
+- **Standing goals** are the owner's. Nia's three: keep Kam's inbox handled, keep the weekly plan current, flag what
+  needs Kam. Each has a weight (importance). They never finish.
+- **Tasks** are instances. They come from attended percepts, from expectations met or missed, from drives, from the
+  owner directly, and from sleep (re-queued work). A task serves at most one goal and lives in one frame (3.6).
+- **Steps** are the plan. A procedure supplies them ready-made; a deliberation writes them.
+
+```typescript
+type Task = {
+  id: string
+  goal?: GoalRef
+  origin: { kind: 'percept' | 'expectation' | 'drive' | 'owner' | 'sleep'; ref: string }
+  title: string
+  priority: number                // recomputed every tick (7.2)
+  deadline?: Date
+  state: 'queued' | 'active' | 'suspended' | 'blocked' | 'done' | 'dropped'
+  steps: Step[]
+  currentStep: number
+  history: string[]               // one line per completed step; chunked when long (3.5)
+  scratch: string                 // the last deliberation's notes
+  care: boolean                   // care mode (6.3)
+  deliberations: number           // model calls spent on this task
+  waitingOn?: ExpectationRef      // when blocked
+}
+```
+
+### 7.2 Priority
+
+```text
+priority = importance · urgency · source
+   importance = goal weight (0.2 to 1), or the origin percept's salience for goal-less tasks
+   urgency    = 1.0 under an hour to deadline, 0.7 today, 0.5 this week, 0.3 none
+   source     = 1.0 owner, 0.8 expectation missed, 0.7 percept, 0.5 drive, 0.4 sleep
+```
+
+Recomputed every tick, in code. Engagement for the interrupt test (3.2) is `priority · (0.5 + 0.5 · progress)`.
+
+### 7.3 Selection
+
+At each tick, if there is no active task or the active one just finished a step, the executive picks the highest
+priority among queued tasks and attended percepts not yet turned into tasks. A `blocked` task, waiting on a reply, is
+not a candidate: it holds an expectation and leaves the foreground, and it comes back as `queued` when the expectation
+is met or missed. Putting a thing down is as important as picking it up; a person waiting for an email does not stare
+at the inbox.
+
+One agent, one action per tick. Candidate actions are inhibited, not queued: the losers are recomputed next tick from
+scratch. Parallelism comes from having several agents, not from one agent doing two things.
+
+### 7.4 Fast path
+
+A procedure runs without deliberation when all of these hold:
+
+1. its trigger matches working memory and its preconditions hold in semantic memory;
+2. its confidence (4.3) is at least 0.8;
+3. the `conflicts` slot is empty;
+4. the task is not in care mode;
+5. recall did not bring back a high-arousal negative episode (arousal ≥ 0.6, valence < 0) involving the same
+   procedure or the same actor;
+6. every step's permission level is satisfied by the identity's autonomy for the current confidence (Chapter 8).
+
+Rule 5 is the amygdala's veto over habit. Nia's invoice procedure has a confidence of 0.88 and matches cleanly, but
+recall surfaced the July episode where an Acme amount was wrong. The habit does not run. The slow path does, with that
+episode in front of it.
+
+When a procedure runs, its steps execute one per tick, each with the procedure's expected outcome attached. A mismatch
+at any step stops the procedure and hands the task to the slow path with the mismatch in `scratch`.
+
+### 7.5 Slow path: deliberation
+
+One model call over the rendered working memory (3.8), with structured output:
+
+```typescript
+type Deliberation = {
+  understanding: string             // what is going on, citing ids
+  options: { action: Step; expected: string; risk: 'low' | 'medium' | 'high' }[]
+  chosen: number                    // index into options, or -1
+  plan?: Step[]                     // when the task needs more than one step
+  confidence: number                // 0 to 1
+  needs: 'none' | 'read' | 'ask_owner' | 'ask_person' | 'wait'
+  question?: string                 // when needs is a question
+  cites: string[]                   // ids from working memory it relied on
+  unknowns: string[]                // what it would want to know and does not
+}
+```
+
+The rules around the call:
+
+- **Model tier** comes from the identity, raised one tier by care mode or by `thoroughness` above 0.7.
+- **Budget:** a task gets a deliberation budget (default 6 calls). Past it, the task blocks and asks the owner. A
+  task that cannot be finished in six thoughts is either too big (split it) or not the agent's to finish.
+- **A plan is a proposal.** `plan` becomes the task's steps. Later steps are executed by procedures if one matches,
+  otherwise by short deliberations bounded to that step. The plan can be revised at any mismatch.
+- **`needs` is honoured before `chosen`.** If the model says it needs a read, the next action is a focused read (2.4),
+  not the chosen action. If it says ask, the task blocks on an expectation for the answer.
+- **Citations are checked.** Every id in `cites` must exist in the rendering. Claims about the world that cite nothing
+  are treated as unknowns (Chapter 10).
+
+Deliberation is the only place the LLM decides anything, and its output is stored whole in the episode. That is the
+"explain each move" from the brainstorm's exit criteria: the explanation was written at the time of the move.
+
+### 7.6 Forward model
+
+Every action carries an `expected` outcome, from the procedure or from the deliberation, and every expected outcome
+becomes an expectation with a deadline: immediate for a tool result, hours or days for a reply (from the recipient's
+people model). This is the efference copy the motor system sends to the cerebellum: the prediction that lets a mismatch
+be noticed at all.
+
+```typescript
+type Expectation = {
+  id: string
+  predicate: PerceptPattern          // what would count as met
+  by: Date
+  task?: TaskRef
+  onMet: 'resume' | 'close'
+  onMissed: 'nudge' | 'escalate' | 'drop'
+  source: EpisodeRef                 // the action or percept that created it
+}
+```
+
+Met: the Predict step (2.3 §4) matches a percept, the task resumes with the percept attended. Missed: the scheduler
+emits a `timer` stimulus, the task is re-queued with the miss in scratch, and `onMissed` says what the first option is.
+Nudge waits `patience` before sending; escalate goes to the owner; drop closes the task with a note.
+
+### 7.7 Monitoring
+
+After every action (tick step 9), the outcome is compared with `expected`:
+
+- **Match:** continue. The procedure gains a success.
+- **Mismatch:** arousal up, the step is re-deliberated with the mismatch in scratch. The procedure gains a failure.
+- **Second mismatch on the same step:** the task blocks and asks the owner, with both attempts in the question.
+- **Conflict:** when the `conflicts` slot is non-empty, or two candidate actions are within 0.1 of each other in
+  priority, the fast path is off for this tick.
+
+Global confidence (6.1) moves a little with every match and mismatch, and it is what the permission matrix reads. An
+agent that has been wrong three times this morning asks before sending; one that has been right all week does not.
+
+### 7.8 Ending
+
+A task is `done` when its expected outcome is observed, not when the model says it is. It is `dropped` when the owner
+says so, or when its deadline passed and its origin no longer exists (the thread was resolved by someone else). Every
+ending writes a span episode with the whole history, so sleep can compile it or learn from it.
+
+### 7.9 The invoice, executed
+
+```text
+09:31  plan-draft task done. Selection: invoice task (priority 0.7·0.5·0.7 = 0.25) beats standup prep (0.23).
+09:31  fast path check: PR-12 matches, conf 0.88, preconditions hold, no conflicts, not care mode…
+       rule 5: E-1044 in recall (arousal 0.7, valence −0.6, actor Acme). Fast path off.
+09:31  deliberation #1 (mid tier): understanding cites P-1042, F-77, PR-12, E-1044.
+       plan: [1] read the invoice body, [2] compare the amount with the last Acme invoice (E-1180) and the
+       project budget (F-102), [3] forward to Kam with a one-line summary noting the check.
+       confidence 0.8, needs: read.
+09:32  step 1: focused read. Outcome: body read, amount €1,240 confirmed. Match.
+09:32  step 2: compare (code, no model). Last invoice €1,240. Match.
+09:33  step 3: send_email, permission "outward, reversible: no" → autonomy says do-and-report at confidence ≥ 0.75.
+       Sent. Expected: no bounce; reply from Kam not required.
+09:33  episode written, task done. Expectation: none needed. why-queue: none.
+that night   compile sees this shape once; not yet a procedure change. After two more, PR-12 gains the compare step.
+```
