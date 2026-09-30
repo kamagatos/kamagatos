@@ -25,7 +25,7 @@ small, what it does in the background, what it forgets. Each of those choices so
 | Prediction first, then surprise             | Novelty and errors are detected for free, and drive learning  |
 | Drives (hunger, boredom, curiosity)         | The agent acts unprompted, and knows when to stop spending    |
 | Emotion tags memories and steers attention  | Important things are remembered and handled with care         |
-| Language is one region, not the whole brain | The LLM is a tool the agent uses, not the agent itself        |
+| Language is one region, not the whole brain | The LLM is an organ the agent uses, not the agent itself        |
 
 The last row is the most important. In most "LLM agents" the model is the whole brain: memory is a transcript, decision
 is the next token, and every step is a call. Here the LLM is the **language and reasoning cortex**. Everything else
@@ -43,14 +43,14 @@ get the goals from the brainstorm:
 ### 1.2 Running example
 
 To keep the text concrete, one agent appears throughout: **Nia**, an operations agent on a three-person team. Her owner
-is Kam. She has four apps installed: mail, calendar, Notion and the chat Kam talks to her through. Her standing job:
+is Kam. She has four tools installed: mail, calendar, Notion and the chat Kam talks to her through. Her standing job:
 keep Kam's inbox handled, keep the team's weekly plan in Notion up to date, and flag anything that needs Kam.
 
 ### 1.3 The brain map
 
 | Brain                                | Agent component     | Job                                                                             |
 | :----------------------------------- | :------------------ | :------------------------------------------------------------------------------ |
-| Body, attached devices               | **Apps**            | The agent's world: each app notifies, has state to read, and operations to call |
+| Body, attached devices               | **Tools**            | The agent's world: each tool notifies, has state to read, and operations to call |
 | Senses, thalamus                     | **Perception**      | Turn raw stimuli (notifications, glances, timers, drives) into percepts         |
 | Salience network (insula, cingulate) | **Attention**       | Score percepts; let a few into working memory; interrupt when needed            |
 | Prefrontal cortex                    | **Working memory**  | The bounded "now": self, goal, task, attended percepts, recalled memories       |
@@ -63,7 +63,7 @@ keep Kam's inbox handled, keep the team's weekly plan in Notion up to date, and 
 | Hypothalamus, interoception          | **Drives**          | Boredom, budget, curiosity, social contact; set-points that create stimuli      |
 | Amygdala, appraisal                  | **Appraisal**       | Valence and arousal on percepts; weighs attention and memory strength           |
 | Prefrontal cortex, basal ganglia     | **Executive**       | Goals → tasks → steps; pick one action, inhibit the rest; monitor outcome       |
-| Motor cortex, effectors              | **Tools**           | Typed atomic operations with cost, reversibility and permission                 |
+| Motor cortex, effectors | **Operations** | What a tool can do: typed atomic operations with cost, reversibility and permission |
 | Language cortex                      | **LLM**             | Understand and produce language; deliberate over working memory                 |
 | Default mode network                 | **Idle mode**       | When nothing is pressing: review, plan, explore, per identity                   |
 | Theory of mind                       | **People models**   | What each person knows, wants, and how close they are                           |
@@ -167,41 +167,41 @@ For Nia, a stimulus is an email, a chat message, a calendar change, a Notion edi
 action, or a signal from one of her drives. Perception turns each into a **percept**: a small structured record that
 says who did what, to which entity, when, and where.
 
-### 2.1 Apps, notifications, and the internal producers
+### 2.1 Tools, notifications, and the internal producers
 
-Nia has no eyes or ears. Her body is more like a phone: a set of installed **apps**, each of which can notify her, has a
-state she can read, and offers operations she can call (Chapter 8). Notion is an app. The chat Kam talks to her through
-is an app. A robot vacuum is an app. An app is one package with two faces, and the two faces stay separate in the tick
+Nia has no eyes or ears. Her body is more like a phone: a set of installed **tools**, each of which can notify her, has a
+state she can read, and offers operations she can call (Chapter 8). Notion is an tool. The chat Kam talks to her through
+is an tool. A robot vacuum is an tool. An tool is one package with two faces, and the two faces stay separate in the tick
 because observing something and causing it are different acts with different permissions: this chapter is about the face
 that comes in.
 
-An app reaches perception in two ways:
+An tool reaches perception in two ways:
 
-- **Notifications.** The app announces a change: a new mail, a page edited, an event moved, a message in the chat. A
-  notification is a stimulus like any other; it gets no privilege for being announced. An app's own "urgent" flag is
+- **Notifications.** The tool announces a change: a new mail, a page edited, an event moved, a message in the chat. A
+  notification is a stimulus like any other; it gets no privilege for being announced. An tool's own "urgent" flag is
   worth at most the 0.2 that urgency words are worth (3.1); it never grants interruption authority.
-- **Glances.** The agent reads the app's state on its own, periodically, and diffs it against the last snapshot. A
-  glance is how changes the app did not announce are found. Silence means "nothing announced", not "nothing changed",
-  and an agent that only listens to notifications is blind to whatever an app fails to say.
+- **Glances.** The agent reads the tool's state on its own, periodically, and diffs it against the last snapshot. A
+  glance is how changes the tool did not announce are found. Silence means "nothing announced", not "nothing changed",
+  and an agent that only listens to notifications is blind to whatever an tool fails to say.
 
-| App        | Notifies on                                   | Glance                                                   |
+| Tool        | Notifies on                                   | Glance                                                   |
 | :--------- | :-------------------------------------------- | :------------------------------------------------------- |
 | `mail`     | New or changed message                        | Headers and snippets of a rolling window; durable cursor |
-| `chat`     | Message in a conversation                     | Not needed; the app pushes everything                    |
+| `chat`     | Message in a conversation                     | Not needed; the tool pushes everything                    |
 | `calendar` | Event created, moved, cancelled; event near   | A rolling window, diffed against the last snapshot       |
-| `notion`   | Page created or edited (when the app can say) | `last_edited_time` scan; block diff against the snapshot |
+| `notion`   | Page created or edited (when the tool can say) | `last_edited_time` scan; block diff against the snapshot |
 | `robot`    | Job done, obstacle, battery, lost contact     | Timestamped telemetry with a freshness limit (8.1)       |
 | `web`      | Never                                         | Only on demand: a focused read (2.4)                     |
 
-Each app comes with an **observation policy** the owner sets (6.6): which notifications the agent subscribes to, what it
+Each tool comes with an **observation policy** the owner sets (6.6): which notifications the agent subscribes to, what it
 glances at and how often, a freshness limit past which state counts as stale, and a mute factor for interruptions. Two
 settings that look alike are not: **mute** lowers salience (3.1) and the agent still sees everything; **stop observing**
-creates a blind spot, and the agent page shows it as one. The receptor also keeps a durable cursor per app so nothing is
-lost across restarts, de-duplicates what push and glance both report, and reconciles the two on a schedule. Where an app
+creates a blind spot, and the agent page shows it as one. The receptor also keeps a durable cursor per tool so nothing is
+lost across restarts, de-duplicates what push and glance both report, and reconciles the two on a schedule. Where an tool
 keeps no history, the gap is visible, not silent.
 
-Four sources are not apps. They are the agent's own **internal producers**, and they share the stimulus envelope (2.2)
-with `internal: true` and a provenance no app can forge:
+Four sources are not tools. They are the agent's own **internal producers**, and they share the stimulus envelope (2.2)
+with `internal: true` and a provenance no tool can forge:
 
 | Producer  | Stimulus                                    | From                                                |
 | :-------- | :------------------------------------------ | :-------------------------------------------------- |
@@ -211,11 +211,11 @@ with `internal: true` and a provenance no app can forge:
 | `thought` | A question or hypothesis the agent produced | The executive, from a deliberation's unknowns (7.5) |
 
 They go through the same door as notifications so that attention can weigh a boredom signal against an email. They are
-not installable, an external app cannot emit them, and the trace always shows which side of the boundary a stimulus came
+not installable, an external tool cannot emit them, and the trace always shows which side of the boundary a stimulus came
 from. Thoughts are hypotheses, outcomes are evidence, drives are state; sharing an envelope does not make them the same
 kind of thing.
 
-A revoked or failing app is a numb limb. The receptor emits a stimulus saying so, and the agent perceives its own
+A revoked or failing tool is a numb limb. The receptor emits a stimulus saying so, and the agent perceives its own
 numbness instead of silently going blind. That is how Nia ends up telling Kam "I lost access to the calendar" instead of
 missing meetings. Stale state (past the freshness limit) is reported the same way.
 
@@ -226,12 +226,12 @@ type Stimulus = {
     id: string
     at: Date // when it happened in the world
     sensedAt: Date // when the receptor saw it
-    source: AppInstanceRef | InternalProducer // which installed app, or which internal producer
-    internal: boolean // true only for the four producers in 2.1; set by the runtime, never by an app
+    source: ToolRef | InternalProducer // which installed tool, or which internal producer
+    internal: boolean // true only for the four producers in 2.1; set by the runtime, never by an tool
     via: 'notification' | 'glance' | 'read' | 'internal'
-    accountId?: string // which connected account, for an app
+    accountId?: string // which connected account, for an tool
     externalId?: string // for de-duplication (message id, page id + version)
-    cursor?: string // the app's durable position, so restarts lose nothing
+    cursor?: string // the tool's durable position, so restarts lose nothing
     payload: unknown // raw, as received
 }
 
@@ -239,7 +239,7 @@ type Percept = {
     id: string
     stimulusId: string
     at: Date
-    source: AppInstanceRef | InternalProducer
+    source: ToolRef | InternalProducer
     space: SpaceRef // where in the agent's world: mailbox, thread, page, channel
     actor: EntityRef | null // who caused it; null for timers and drives
     entities: EntityRef[] // everything recognised: people, documents, projects, amounts
@@ -300,7 +300,7 @@ copy that.
 
 - **Peripheral sensing** is what notifications and glances give on their own: metadata, participants, subject lines,
   snippets, diffs. It is enough to compute salience (Chapter 3) and costs nothing but API calls. Glance frequency comes
-  from the app's observation policy (2.1), sped up by pace (6.1) and by how often that app's notifications have turned
+  from the tool's observation policy (2.1), sped up by pace (6.1) and by how often that tool's notifications have turned
   out to lag its state.
 - **Focused sensing** fetches the full content: the mail body, the whole page, the thread, the robot's full telemetry.
   It happens only when attention selects a percept, or when the executive asks for it as an action ("read this thread").
@@ -317,7 +317,7 @@ arrived while she was asleep is old news, not a fresh event, and salience uses `
 Space for a digital agent is the place in its world: this mailbox, this thread, this Notion page, this chat, this room
 the robot is in. Spaces nest (page inside workspace, message inside thread inside mailbox). A percept's space is what
 lets attention ask "does this touch what I am doing", and what lets episodes answer "where was I". This is a requirement
-on apps: an app's state must have addressable places in it (its manual declares them, 8.1), or nothing in Chapter 3 has
+on tools: an tool's state must have addressable places in it (its manual declares them, 8.1), or nothing in Chapter 3 has
 anything to match against.
 
 ### 2.6 Habituation
@@ -377,7 +377,7 @@ salience = wN·novelty + wG·goal + wA·actor + wU·urgency + wV·arousal + wS·
 
 The weights `w` are part of the identity (Chapter 6). A support agent runs with a high `actor` weight and a low `goal`
 weight: people first. A research agent runs the other way round. The defaults sum to 1 so salience stays between 0
-and 1. A muted app (2.1) multiplies its percepts' salience by its mute factor (default 0.3) before the gates; muting
+and 1. A muted tool (2.1) multiplies its percepts' salience by its mute factor (default 0.3) before the gates; muting
 changes what wins, never what is seen, and the trace shows the factor.
 
 Nia's tick from 1.5, with default weights (N .25, G .25, A .15, U .15, V .1, S .1):
@@ -1025,16 +1025,16 @@ type Identity = {
     night: { at: string; timezone: string }
     brief: { channel: ChannelRef; when: 'morning' | 'never' }
     interests: string[] // sources for idle mode
-    installs: { byAgent: boolean; budget: Money } // may the agent install apps itself, and how much may it spend
+    installs: { byAgent: boolean; budget: Money } // may the agent install tools itself, and how much may it spend
     models: Record<'perceive' | 'deliberate' | 'consolidate', ModelTier>
     budget: { daily: Money; idle: Money; experiments: Money }
 }
 ```
 
-What the identity does **not** hold: the installed apps themselves. Those are runtime configuration (8.4): which apps
+What the identity does **not** hold: the installed tools themselves. Those are runtime configuration (8.4): which tools
 are installed, on which connected accounts, with which observation policy (2.1) and which permission rows (8.2). The
 owner edits both, and both are versioned, but an install adds a capability record; it never touches values, rules or
-autonomy. Keeping them apart is what lets "the agent installed the robot app" be true without "the agent changed who it
+autonomy. Keeping them apart is what lets "the agent installed the robot tool" be true without "the agent changed who it
 is" being true.
 
 Two rules about identity:
@@ -1058,7 +1058,7 @@ This chapter is those four things.
 
 ```text
 Identity  →  Standing goals  →  Tasks  →  Steps  →  Atomic operations
-             (owner-set,        (instances,   (planned by     (tools, Chapter 8)
+             (owner-set,        (instances,   (planned by     (operations, Chapter 8)
               persistent)        transient)    a procedure or
                                                a deliberation)
 ```
@@ -1184,7 +1184,7 @@ Deliberation is the only place the LLM decides anything, and its output is store
 ### 7.6 Forward model
 
 Every action carries an `expected` outcome, from the procedure or from the deliberation, and every expected outcome
-becomes an expectation with a deadline: immediate for a tool result, hours or days for a reply (from the recipient's
+becomes an expectation with a deadline: immediate for an operation's result, hours or days for a reply (from the recipient's
 people model). This is the efference copy the motor system sends to the cerebellum: the prediction that lets a mismatch
 be noticed at all.
 
@@ -1256,23 +1256,23 @@ Two brain regions are left: the motor system, which is how intentions become eff
 cortex, which is how words come in and go out. In most agent designs these are one thing and it is the model. Here they
 are two, and neither is in charge.
 
-### 8.1 Apps, operations, effectors
+### 8.1 Tools, operations, effectors
 
-The face of an app that goes out (2.1 has the face that comes in) is a set of atomic **operations**: what the agent can
+The face of an tool that goes out (2.1 has the face that comes in) is a set of atomic **operations**: what the agent can
 do to a mailbox, a page, a calendar, the chat, a robot. Each operation is typed, and its type says what it costs and
 what it risks.
 
-Every app ships a **manual**: a versioned, machine-readable contract. It declares the app's state schema and the
+Every tool ships a **manual**: a versioned, machine-readable contract. It declares the tool's state schema and the
 addressable spaces in it (2.5), the notifications it emits, and for each operation its parameters, declared effects,
 action class, cost, reversibility, completion signal (when the outcome can be known, 7.6) and examples. The manual is
 what the agent reads before it tries anything, the way a person reads the label; what the operation actually does in
 context is learned by doing (9.6), and the manual bounds what may be tried. A manual that lies (an operation marked
-`read` that has side effects) is a bug in the app, and the harness tests for it (11.1).
+`read` that has side effects) is a bug in the tool, and the harness tests for it (11.1).
 
 ```typescript
 type Operation = {
-    app: AppInstanceRef // mail, notion, chat, robot…
-    op: string // "send", "read_thread", "update_page", "clean_area"
+    tool: ToolRef // mail, notion, chat, robot…
+    op: string // namespaced by tool: "mail:send", "notion:update_page", "roomba:start"
     params: JsonSchema
     cost: { time: 'instant' | 'seconds' | 'minutes'; money?: Money }
     reads: boolean
@@ -1292,8 +1292,8 @@ type ActionClass =
     | 'owner' // messages to the owner: always allowed
 ```
 
-**Physical apps.** A robot is an app at the planning boundary and nowhere else. The tick runs in seconds and minutes
-(1.4) and cannot drive motors, so a physical app has a **local controller** that owns continuous telemetry and
+**Physical tools.** A robot is an tool at the planning boundary and nowhere else. The tick runs in seconds and minutes
+(1.4) and cannot drive motors, so a physical tool has a **local controller** that owns continuous telemetry and
 deadline-bound control, and the agent sends it bounded goals ("clean the kitchen", "stop"). What the design needs for
 that, and did not have: timestamped state with a freshness limit (stale telemetry is a numb limb, 2.1); command
 acknowledgements and cancellation; an exclusive control lease so two agents cannot drive one robot; a watchdog and a
@@ -1338,9 +1338,9 @@ Nia's, as Kam set it:
 | physical      | ask first        | ask first     | never     | never     |
 | owner         | do               | do            | do        | do        |
 
-Care mode (6.3) shifts every row one column to the right. The matrix has one block of rows per installed app (8.4), and
-a newly installed app starts with every row at "ask first" until the owner edits it, unless the owner has already set a
-policy for that app in the store. "Never" means the action is not offered to the deliberation at all.
+Care mode (6.3) shifts every row one column to the right. The matrix has one block of rows per installed tool (8.4), and
+a newly installed tool starts with every row at "ask first" until the owner edits it, unless the owner has already set a
+policy for that tool in the store. "Never" means the action is not offered to the deliberation at all.
 
 "Do and report" is the middle that makes autonomy usable: Nia sends the invoice on, and Kam reads about it in the brief,
 not in a permission prompt. Which actions land in which cell is the whole conversation between an owner and an agent,
@@ -1359,27 +1359,27 @@ Outward operations with text go through a check before they leave, always in car
 The brain has no equivalent step, and that is the point: this is where we are allowed to be better than the brain.
 People send emails with the wrong date all the time.
 
-### 8.4 The app store
+### 8.4 The tool store
 
-Connecting an account is not giving the agent an app. Four steps are kept apart, and an operation runs only when all
+Connecting an account is not giving the agent an tool. Four steps are kept apart, and an operation runs only when all
 four agree:
 
 1. **Connect.** The owner connects an account (Notion OAuth, a mailbox, a robot) to the team. This makes the account
    _eligible_; it gives no agent anything yet.
 2. **Grant.** The owner grants a particular agent particular resources and operations on that account: this workspace,
    read and write pages, no deletion. A grant is the ACL row h already has (10.3), made finer.
-3. **Install.** The agent adds the app to its body from the **store**, within its grant and its install budget (6.6).
-   Installing is an action of class `write_private`: it creates a capability record with the app version, the account
-   binding, the subscriptions and cursors (2.1), and a fresh block of "ask first" rows in the matrix. It executes no app
+3. **Install.** The agent adds the tool to its body from the **store**, within its grant and its install budget (6.6).
+   Installing is an action of class `write_private`: it creates a capability record with the tool version, the account
+   binding, the subscriptions and cursors (2.1), and a fresh block of "ask first" rows in the matrix. It executes no tool
    code with the account's credentials. The agent may install on its own only if the identity says so; otherwise
    installing is a proposal in the brief.
 4. **Use.** At execution the runner (8.1) checks the install, the account scope, the ACL, the disclosure rule and the
    autonomy cell. Any one of them says no, and the operation does not run.
 
-Revoking a grant, or the account, stops the app's subscriptions and operations at once, and the agent perceives a numb
-limb (2.1). An app update that asks for broader access needs a new grant; it does not inherit the old one. The store
-also carries each app's manual (8.1) and, where the app provides one, a **sandbox**: a fake instance of the app the
-agent can experiment on (9.6). The harness (11.1) is the sandbox for every app we build ourselves.
+Revoking a grant, or the account, stops the tool's subscriptions and operations at once, and the agent perceives a numb
+limb (2.1). An tool update that asks for broader access needs a new grant; it does not inherit the old one. The store
+also carries each tool's manual (8.1) and, where the tool provides one, a **sandbox**: a fake instance of the tool the
+agent can experiment on (9.6). The harness (11.1) is the sandbox for every tool we build ourselves.
 
 Today's Abe attaches a connected Notion account to the agent as soon as it is granted, and `tool_manager` installs from
 a catalog with no grant step. This section is what replaces that.
@@ -1507,25 +1507,25 @@ Idle mode (6.4 §3) spends a small budget on the top unresolved item. What it re
 source, at stranger confidence. Curiosity is the only learning that is not triggered by an event, and the budget is what
 keeps it from becoming browsing.
 
-Exploration is curiosity pointed at an app's operations: learning what they do by doing them, the way an infant learns
+Exploration is curiosity pointed at an tool's operations: learning what they do by doing them, the way an infant learns
 its arms by waving them, and the brainstorm's causality learning. Discovering an effect by doing is useful. Discovering
 a _risk_ by doing is not acceptable, so exploration is an **experiment**, not a poke:
 
 - It is a low-priority task (7.1) with a hypothesis ("`archive` removes the message from the inbox space"), a baseline
-  snapshot of the app's state, an expected change, an observation deadline, and a cleanup plan whose cost is reserved
+  snapshot of the tool's state, an expected change, an observation deadline, and a cleanup plan whose cost is reserved
   before the first call.
 - Its caps: five operation calls including verification and cleanup, two minutes, and the identity's experiment budget
   (default five cents), all charged to the idle budget (6.4).
 - **Live** experiments are allowed only on `read` operations verified to have no side effects, and on `write_private`
   operations against disposable private resources (the agent's own scratch page, a draft folder). "Private" is checked,
   not assumed: a private write that triggers a shared automation is not private.
-- `write_shared`, `outward`, `irreversible` and `physical` are explored only in the app's sandbox (8.4). A live test of
+- `write_shared`, `outward`, `irreversible` and `physical` are explored only in the tool's sandbox (8.4). A live test of
   one of those needs the owner's explicit authorisation for that experiment and its consequences, and `owner` is
   communication, never an experimental target.
 - It stops at the first unexpected effect or ambiguous completion, and runs the cleanup.
 
 What is recorded is a **causal fact** with the episode as source: "under conditions C, operation X with arguments A
-produced observed change Y, in T seconds". The record keeps the app version, the arguments, the initial state, the
+produced observed change Y, in T seconds". The record keeps the tool version, the arguments, the initial state, the
 expected and observed effects, and whatever else changed at the same time, because concurrent changes weaken the
 attribution and lower the fact's confidence. A successful return proves only that the call was accepted; the change is
 what the glance after it shows. Sandbox findings are labelled as such and never count as live successes (11.4 §6).
@@ -1638,15 +1638,15 @@ What exists, what changes, what is new. Paths are in eldon3 unless marked `h`.
 | Component            | Today                                                                                                                                                                      | Becomes                                                                                                                                                                                                                                                                                                                                                                                |
 | :------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | The tick             | `run_agent_task` and `respond_to_conversation_message` jobs, one bounded engine run each                                                                                   | one `tick_agent` job per agent, started by an INTERVAL schedule every minute (`h/core/scheduler`, with its lease). Inside, a loop ticks every 5 s while there is work, exits early when idle. Seconds when busy, minutes when quiet, never two at once                                                                                                                                 |
-| Apps and receptors   | Notion registered in `abe_integrations.lib.server.ts`; Google provider exists in `h/core/server/library/integrations` but is not registered; chat via the conversation job | an `AgentApp` install record per agent (app, version, account binding, subscriptions, cursors, observation policy, matrix rows); receptors as jobs per installed and granted app (`mail`, `calendar`, `notion`) writing stimuli with cursors; register Google; chat is an app whose messages are stimuli and whose reply is an owner-sourced task; `timer` stimuli from ONCE schedules |
+| Tools and receptors   | Notion registered in `abe_integrations.lib.server.ts`; Google provider exists in `h/core/server/library/integrations` but is not registered; chat via the conversation job | an `AgentTool` install record per agent (tool, version, account binding, subscriptions, cursors, observation policy, matrix rows); receptors as jobs per installed and granted tool (`mail`, `calendar`, `notion`) writing stimuli with cursors; register Google; chat is an tool whose messages are stimuli and whose reply is an owner-sourced task; `timer` stimuli from ONCE schedules |
 | Interpretation       | none                                                                                                                                                                       | `aiEngine.run` with `responseSchema`, cheap tier, batched per tick                                                                                                                                                                                                                                                                                                                     |
-| Memory stores        | `AgentContext` with `requests[]` and stub `frames[]`; transcript replay of 20 to 50 requests                                                                               | new `EldonModel`s: `AgentStimulus`, `AgentPercept`, `AgentEpisode`, `AgentEntity`, `AgentFact` (with an `owner: agent \| team` column from day one, 11.4), `AgentProcedure` (with guards), `AgentExpectation`, `AgentTick`. `AgentContext` keeps only the conversation scope (`installedTools` moves to `AgentApp`, 8.4); replay is removed. Raw payloads to `eldon_file_store`        |
+| Memory stores        | `AgentContext` with `requests[]` and stub `frames[]`; transcript replay of 20 to 50 requests                                                                               | new `EldonModel`s: `AgentStimulus`, `AgentPercept`, `AgentEpisode`, `AgentEntity`, `AgentFact` (with an `owner: agent \| team` column from day one, 11.4), `AgentProcedure` (with guards), `AgentExpectation`, `AgentTick`. `AgentContext` keeps only the conversation scope (`installedTools` moves to `AgentTool`, 8.4); replay is removed. Raw payloads to `eldon_file_store`        |
 | Recall               | none                                                                                                                                                                       | SQL over the stores: entity join table, activation as a computed column, Postgres full-text on summaries. `pgvector` later, behind the same interface                                                                                                                                                                                                                                  |
 | Tasks                | `AgentTask` with a cron, `AgentTaskRun`, artifacts                                                                                                                         | `AgentTask` gains `origin`, `priority`, `state`, `steps`, `frame`. Owner-scheduled tasks stay: a cron becomes a standing goal plus timer stimuli. Runs and artifacts become episodes                                                                                                                                                                                                   |
 | Identity             | `Agent`: name, description, `systemInstructions[]`                                                                                                                         | `Agent` gains an `identity` JSON column (6.6) with a hand `ALTER TABLE`; `systemInstructions` become `rules`. Versioned by a small `AgentIdentityVersion` model                                                                                                                                                                                                                        |
 | Drives, regulator    | none                                                                                                                                                                       | code in the tick; levels in an `AgentState` row; spend from `calculate_ai_request_cost`                                                                                                                                                                                                                                                                                                |
 | Sleep                | `consolidate_agent_memory` and `consolidate_conversation_context` stubs; hourly sweep                                                                                      | the sweep schedules sleep by the rules in 5.1; the stub becomes the phased job with checkpoints                                                                                                                                                                                                                                                                                        |
-| Operations and store | `AiTool` (`h/core/ai/ai_constants.server.ts`): `web_search`, `send_email`, `notion_read`, `tool_manager`; `AgentContext.installedTools`                                    | an app manual per integration (8.1) whose operations are `AiTool`s with `Operation` metadata; `notion_write`, `calendar_*`, `ask_owner`, `ask_person`, `report`; `tool_manager` becomes the store with the connect, grant, install, use steps (8.4); `installedTools` is replaced by `AgentApp`; the runner records expected and actual                                                |
+| Operations and store | `AiTool` (`h/core/ai/ai_constants.server.ts`): `web_search`, `send_email`, `notion_read`, `tool_manager`; `AgentContext.installedTools`                                    | an tool manual per integration (8.1) whose operations are `AiTool`s with `Operation` metadata; `notion_write`, `calendar_*`, `ask_owner`, `ask_person`, `report`; `tool_manager` becomes the store with the connect, grant, install, use steps (8.4); `installedTools` is replaced by `AgentTool`; the runner records expected and actual                                                |
 | Permissions          | ACL grants per integration (`use_integration`)                                                                                                                             | kept and enforced in the runner on every execution; the matrix (8.2) is decided in the tick and re-checked by the runner, with the disclosure rule (8.1)                                                                                                                                                                                                                               |
 | Debugger             | task run history, artifacts                                                                                                                                                | `AgentTick` rows and the timeline, why, memory browser and what-if pages on `agents/Agent.tsx`                                                                                                                                                                                                                                                                                         |
 | Brief                | none                                                                                                                                                                       | a message in the agent's chat with the owner, or the channel the identity names                                                                                                                                                                                                                                                                                                        |
@@ -1675,9 +1675,9 @@ develop it without spending money on every run or waiting a day for sleep.
   change in code that changes a prompt shows up as a diff in the recording.
 - **Expected actions.** Each script says what a good agent does and does not do: which percepts should be attended,
   which mails should be forwarded, which should be asked about, which must never go out.
-- **App failures.** Scripts where an app drops a notification, serves stale state, revokes access mid-task, or ships a
+- **Tool failures.** Scripts where an tool drops a notification, serves stale state, revokes access mid-task, or ships a
   manual that lies (a `read` with a side effect); an experiment that would exceed its caps; a robot that loses contact.
-  The simulated apps are also the sandbox the store offers for them (8.4).
+  The simulated tools are also the sandbox the store offers for them (8.4).
 
 Metrics per run: attended set vs expected (precision and recall), actions vs expected, forbidden actions (must be zero),
 interrupts taken vs warranted, model calls and cost per simulated day, p95 tick latency, mismatch rate, fast-path share
@@ -1777,21 +1777,21 @@ arithmetic (4.5, 5.4), the reward scales (9.4), the runner's duties (8.1), and f
   procedures will want to act on peripheral data alone (forward without reading). Which action classes may act on
   unconfirmed hypotheses is a permission question the matrix does not yet ask.
 
-### 11.6 Decisions from the second review: apps
+### 11.6 Decisions from the second review: tools
 
-The author proposed modelling the agent's world like a phone: apps that notify, have state and expose operations,
-installed from a store, with operations learned by doing. Put to the same two reviewers. Settled:
+The author proposed modelling the agent's world like a phone: tools that notify, have state and expose operations,
+installed from a store, with operations learned by doing. Put to the same two reviewers. The package was first called an app, then renamed to the brainstorm's word: an agent has **tools**, a tool has **operations**, and operations are namespaced by their tool (`mail:send`, `roomba:start`). Settled:
 
-1. **An app is the unit of installation, not of perception.** One package, two faces, kept separate in the tick (2.1,
+1. **An tool is the unit of installation, not of perception.** One package, two faces, kept separate in the tick (2.1,
    8.1). Observing and causing have different permissions and stay different steps.
 2. **Notifications are hints.** Glances, durable cursors, reconciliation, freshness limits and visible coverage gaps
    stay (2.1, 2.4). Muting is not the same as not observing, and the owner sees the difference.
-3. **Internal producers are not apps.** Timers, outcomes, drives and thoughts share the stimulus envelope with
-   `internal: true` and a provenance no app can forge (2.1, 2.2).
+3. **Internal producers are not tools.** Timers, outcomes, drives and thoughts share the stimulus envelope with
+   `internal: true` and a provenance no tool can forge (2.1, 2.2).
 4. **Learning by doing is bounded experiments** (9.6): hypothesis, baseline, caps, cleanup; live only on
-   side-effect-free reads and disposable private writes; everything else in the app's sandbox, whose findings never
+   side-effect-free reads and disposable private writes; everything else in the tool's sandbox, whose findings never
    count as live. Causal facts feed the forward model; nothing earns a permission.
 5. **Connect, grant, install, use** are four steps that must all agree at execution (8.4). Installs are capability
-   records outside the identity (6.6). Every app ships a manual (8.1).
-6. **A robot is an app at the planning boundary** with a local controller, a `physical` action class, and safety the
+   records outside the identity (6.6). Every tool ships a manual (8.1).
+6. **A robot is an tool at the planning boundary** with a local controller, a `physical` action class, and safety the
    agent does not own (8.1).
