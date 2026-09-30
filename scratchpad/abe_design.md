@@ -93,6 +93,7 @@ keep Kam's inbox handled, keep the team's weekly plan in Notion up to date, and 
 | Parietal cortex | **View** | What is in front of the agent now: items in a frame, given by the tool |
 | Neocortex                            | **Semantic memory** | Entities and facts with confidence: people, projects, documents, rules          |
 | Basal ganglia, cerebellum            | **Procedures**      | Compiled skills that run without deliberation                                   |
+| Prefrontal cortex, schemas | **Patterns** | The shape of situations, what was tried there and how it went, what is typical (4.11) |
 | Sleep, hippocampal replay            | **Consolidation**   | Nightly job: extract facts, compile habits, compact, forget                     |
 | Predictive coding, cerebellum        | **Expectations**    | What should happen next; surprise when it does not                              |
 | Hypothalamus, interoception          | **Drives**          | Boredom, budget, curiosity, social contact; set-points that create stimuli      |
@@ -187,7 +188,7 @@ procedure ("forward supplier invoices to Kam with a one-line summary") is the li
 0. Read this first
 2. Perception
 3. Attention and working memory
-4. Memory: episodic, semantic, procedural
+4. Memory: episodic, semantic, procedural, patterns
 5. Consolidation (sleep) and forgetting
 6. Drives, appraisal and identity
 7. Executive: goals, planning, action selection, monitoring
@@ -319,7 +320,11 @@ stages do the bulk of the work, and the model sees only what survives.
    Produces the `Stimulus` and the skeleton of the `Percept`.
 2. **Features.** Mentions, dates, amounts, URLs, reply markers, "urgent" tokens, language. Regex and parsers.
 3. **Recognition.** Entity resolution against semantic memory. Identifiers first (email address, page id, calendar id),
-   then names. A match fills `actor` and `entities`. No match creates a candidate.
+   then names. A match fills `actor` and `entities`. When neither matches, a third pass identifies **by pattern**
+   (4.11): the percept's behaviour (its pace, timing, place, style) is matched against the patterns of known entities,
+   and the percept gets a *candidate distribution* over actors instead of nothing ("moves at this pace, at this hour:
+   Ari 0.6, Sam 0.3"). The distribution narrows with each further percept, the brainstorm's dog-or-cat example. Only
+   when no pattern fits either does the percept create a new candidate entity.
 4. **Priors.** Match the percept against open expectations (Chapter 7). "Reply from the supplier about the invoice, this
    week" matches a mail from the supplier's domain with "invoice" in the subject. A matched expectation lends its
    interpretation to the percept as a **hypothesis**, with low certainty until a focused read confirms it. That is
@@ -409,8 +414,7 @@ and nothing else happens. A glance never calls the model.
 tick (1.4). It asks one question per place: is it time to look? The answer comes from a learned model of the place
 and a value of knowing, and from a few reflexes.
 
-**The change model.** For every place the agent has ever looked at, semantic memory holds a fact
-`place —changes_every→ …` whose value is a rate: how many changes per hour to expect there. It is learned by counting,
+****The change model.** For every place the agent has ever looked at, a regularity (4.11) holds a rate: how many changes per hour to expect there. It is learned by counting,
 the way facts are (9.2), with a form that stays cheap:
 
 ```text
@@ -621,7 +625,7 @@ type WorkingMemory = {
     }
     ancestors: Breadcrumb[] // one line per frame above the focus: question, constraints, requested result
     attention: Percept[] // max 4, ordered by salience
-    recall: Recalled[] // max 7: episodes, facts, people, procedures; each with id and activation
+    recall: Recalled[] // max 7: episodes, facts, people, procedures, patterns; each with id and activation
     expectations: Expectation[] // max 5, the open ones tied to the focus
     scratch: string // the agent's own last reasoning summary for the focus, max ~300 tokens
     conflicts: Conflict[] // recalled facts that contradict attended percepts (3.7)
@@ -730,12 +734,13 @@ id, that is a claim from the model's own weights, and Chapter 10 says what happe
 
 ---
 
-## 4. Memory: episodic, semantic, procedural
+## 4. Memory: episodic, semantic, procedural, patterns
 
 The brain does not have "a memory". It has several, with different jobs, different speeds, and different ways of
 forgetting. The hippocampus records specific events fast, in one shot. The neocortex learns general facts slowly, from
-many events. The basal ganglia and cerebellum store skills that run without recall. Working memory (Chapter 3) is none
-of these: it is where the others meet.
+many events. The basal ganglia and cerebellum store skills that run without recall. The prefrontal cortex holds
+schemas: the shapes of situations, and what tends to happen in them. Working memory (Chapter 3) is none of these: it
+is where the others meet.
 
 Today's Abe keeps memory as a transcript and replays the last 20 to 50 requests. That is neither episodic nor semantic;
 it is a tape. Nia keeps the transcript as an audit log and never reads it back. She remembers the way people do.
@@ -908,10 +913,13 @@ spaces, the current task's goal, and the text of the percept if any. It runs in 
    deal, and the last time it went wrong.
 3. **Similarity.** Text search over summaries and fact values for the percept's words. Full-text search first; an
    embedding index later, once we have one (Chapter 10).
+4. **Shape.** The situation's slot signature (actor kind, place kind, item kinds, conditions: kinds, not instances,
+   which the traits supply) looked up against patterns (4.11). This is what brings back "something like this", with
+   different people and a different thread, and what no amount of entity overlap would find.
 
 Candidates are scored by activation `A`, everything under a retrieval threshold is dropped, and the top items fill the
-`recall` slot up to its capacity of seven, with procedures and pinned facts given the first places. Each recalled item
-gets an access recorded. Recall never calls the model.
+`recall` slot up to its capacity of seven, with procedures, pinned facts and a matching pattern given the first
+places. Each recalled item gets an access recorded. Recall never calls the model.
 
 ### 4.7 Reconsolidation
 
@@ -1015,6 +1023,83 @@ by itself.
 **In the trace.** Every tick records what it primed and any reminding, popped or not (10.1), so "why did that come to
 mind" has an answer, which is the debuggability goal applied to spontaneous thought.
 
+### 4.11 Patterns: the shape of situations
+
+"I have seen something like this before. We did it this way and it worked; the other way did not." "Blue is used a
+lot here, and last time I saw that it was because of x." "Something moves at this pace, at this hour; it is probably
+Ari, or maybe Sam." Each of these is a **pattern**: a generalisation over episodes that keeps the shape and drops the
+particulars. The brain calls them schemas, and it treats them as a store of their own, in the prefrontal cortex,
+built from the hippocampus's episodes over many nights. Patterns are memory's fourth store, beside episodes, facts and
+procedures.
+
+```typescript
+type Pattern = {
+  id: string
+  slots: {                          // the shape: kinds, never instances
+    actorKind?: string              // supplier, teammate, stranger, agent
+    placeKind?: string              // inbox, thread, page, room (12.2)
+    itemKinds?: string[]            // invoice, attachment, comment
+    conditions?: string[]           // with_others, unread_present, in_motion (12.8)
+    goal?: GoalRef
+  }
+  variants: {                       // what was done, or what was seen, in this shape
+    steps?: Step[]                  // an action variant
+    observed?: string               // or a descriptive one: "amount differs from the last invoice"
+    stats: { runs: number; successes: number; failures: number; lastRun?: Date }
+    sources: EpisodeRef[]
+  }[]
+  regularities: {                   // what is typical here, so deviation can be noticed
+    attribute: string               // "colour", "sender_domain", "reply_delay", "amount"
+    values: { value: unknown; p: number }[]
+    n: number
+  }[]
+  because: { regularity?: string; variant?: number; cause: FactRef; sources: EpisodeRef[] }[]
+  n: number                         // episodes this pattern rests on
+  accesses: number; lastAccess: Date   // activation, as everywhere (4.5)
+}
+```
+
+**Three uses.**
+
+- **Advice in deliberation.** A recalled pattern renders as what its variants did and how they went: "seen 6 times in
+  this shape: forwarding at once worked 5 of 5; asking first was slower and unnecessary 2 of 2." The losing branch is
+  kept beside the winning one, which is what makes "we tried the other way" available at all. The model cites the
+  pattern's id like any other item, and the citation carries the counts, so a pattern resting on two episodes
+  advises more softly than one resting on sixty.
+- **Explanation.** A regularity with a `because` answers "why is it like this here": "blue is used for approved rows
+  on this page (from 14 views); Kam said so on Sept 3 (F-210)." And a regularity without one is a question for the
+  why queue once it is well established, because a strong regularity the agent cannot explain is worth asking about.
+- **Identification.** Recognition (2.3 §3) matches a percept's behaviour against the patterns attached to known
+  entities (a person's pace, hours, channel, tone, the rate of a place) and returns candidates with probabilities, to
+  be narrowed by the next percepts. The brainstorm's identity-as-distribution, used the way it was meant.
+
+**Where patterns come from.** Sleep (5.2 §2 and §3): extract and compile both write to them. An episode that fits an
+existing pattern updates its variant stats and regularities by code, with no model call. An episode that fits no
+pattern goes to the model, and a group of three or more such episodes with the same slot signature becomes a new
+pattern. Regularities are counted over views (12.3): what a kind of item looks like in a kind of place, over many
+looks.
+
+**A procedure is a pattern that converged.** When one action variant reaches the fast-path bar (4.3) and the others
+have gone quiet, the variant is compiled as a procedure with the pattern as its origin. The pattern stays: it is where
+the procedure's alternatives live, where its guards point, and what the slow path sees when the procedure is vetoed.
+Compile is therefore not a separate mechanism; it is what happens to a pattern with a clear winner.
+
+**Fast consolidation for what fits.** Tse and colleagues showed in 2007 that a memory consistent with an existing
+schema consolidates in hours, not weeks. The same economy applies here and it pays: on a normal day most episodes fit
+a pattern, so most of extract runs as counting, and only the pattern-breaking episodes cost a model call. Sleep's
+expensive phase (5.5) shrinks as the agent's patterns grow, which is what getting experienced should feel like.
+
+**Over-generalisation** is the failure mode: "all suppliers are late" from two episodes. The same rules as guards
+(4.3) hold it in check. A pattern needs three episodes to exist and advises with its counts visible; a regularity needs
+`n ≥ 10` before it can raise an anomaly (2.3 §4) or a question; variants decay with activation like everything else,
+so a way of doing things that stopped being used stops being advised; and a pattern's slots are only ever as
+specific as its episodes agree on. If two Acme invoices went wrong, the pattern is *Acme invoices*, and it becomes
+*supplier invoices* only when other suppliers' episodes join it.
+
+**Regularities elsewhere in the document** are special cases of this store: the change model per place (2.9) is a
+regularity of one attribute, rate; "where things usually are" (12.6) is a regularity of position. They keep their own
+sections because they have their own formulas, and they live in the same rows.
+
 ---
 
 ## 5. Consolidation (sleep) and forgetting
@@ -1042,9 +1127,12 @@ checkpoint; the remaining phases run at the next opportunity. Nothing in sleep i
 
 **1. Replay.** Read the episodes since the last sleep, grouped by task, thread and day. Code only.
 
-**2. Extract** (episodic → semantic). For each group: one model call, mid-tier, given the episodes' summaries and the
-facts already known about the entities involved. It returns new facts, confirmations and contradictions, each pointing
-at the episodes that support it. Code applies them:
+**2. Extract** (episodic → semantic). First, by code: each episode is matched against the patterns (4.11) by its slot
+signature. An episode that fits updates the pattern's variant stats and regularities, and confirms the facts the
+pattern's `because` links point at; nothing else is needed, and no model is called. This is the fast, schema-consistent
+consolidation, and on a normal day it covers most of the group. For the episodes that fit no pattern: one model call,
+mid-tier, given their summaries and the facts already known about the entities involved. It returns new facts,
+confirmations and contradictions, each pointing at the episodes that support it. Code applies them:
 
 - Confirmation: `lastConfirmed` moves, confidence rises, the episode joins the sources.
 - New fact: created with confidence from the number of supporting episodes.
@@ -1052,10 +1140,13 @@ at the episodes that support it. Code applies them:
   on the morning brief as a question.
 - Candidate entities seen twice, or in an attended episode, are promoted. Others age toward deletion.
 
-**3. Compile** (episodic → procedural). Look for recurring shapes: the same trigger (percept pattern and goal), the same
-sequence of atomic operations, and a matched outcome, three or more times without a failure. Each becomes a procedure
-proposal with `origin.kind = 'compiled'`. Procedures whose failures have caught up with their successes drop below the
-fast-path threshold and are flagged. This is how Nia's ninth forwarded invoice stops costing a model call.
+**3. Compile** (episodic → patterns → procedural). Among the episodes that fit no pattern, three or more with the same
+slot signature (4.11) become a new pattern, with one variant per distinct thing that was done or seen in it and the
+outcomes attached. Then, over all patterns: a variant whose confidence has reached the fast-path bar (4.3) while the
+other action variants have gone quiet becomes a procedure proposal with `origin.kind = 'compiled'` and the pattern as
+its origin. Procedures whose failures have caught up with their successes drop below the fast-path threshold and are
+flagged, and their pattern's other variants come back into advice. This is how Nia's ninth forwarded invoice stops
+costing a model call, and how the tenth still knows what the alternative was.
 
 Parameters generalise by binding. A step's argument becomes a binding when, in every run, its value equals a field of
 the trigger percept (the mail's id, its sender, its thread), a field of a recalled fact (the owner's address), or a
@@ -2213,7 +2304,7 @@ What exists, what changes, what is new. Paths are in eldon3 unless marked `h`.
 | Tools and receptors   | Notion registered in `abe_integrations.lib.server.ts`; Google provider exists in `h/core/server/library/integrations` but is not registered; chat via the conversation job | an `AgentTool` install record per agent (tool, version, account binding, subscriptions, cursors, observation policy, matrix rows); receptors as jobs per installed and granted tool (`mail`, `calendar`, `notion`) writing stimuli with cursors; register Google; chat is a tool whose messages are stimuli and whose reply is an owner-sourced task; `timer` stimuli from ONCE schedules |
 | Interpretation       | none                                                                                                                                                                       | `aiEngine.run` with `responseSchema`, cheap tier, batched per tick                                                                                                                                                                                                                                                                                                                     |
 | Model calls in flight | `aiEngine.runStream` with `turn`, `thinking_*`, `text` and `tool_call` events; runs can be cancelled; every turn is an `AiSingleTurnRequest` row                          | deliberation as an asynchronous step beside the tick (8.5): the time budget sets tier and effort; progress from the stream events; cancel with a reason; the latency model and the optimism factors computed from the request rows                                                                                                                                                       |
-| Memory stores        | `AgentContext` with `requests[]` and stub `frames[]`; transcript replay of 20 to 50 requests                                                                               | new `EldonModel`s: `AgentStimulus`, `AgentPercept`, `AgentEpisode`, `AgentEntity`, `AgentFact` (with an `owner: agent \| team` column from day one, 11.4), `AgentProcedure` (with guards), `AgentExpectation`, `AgentTick`. `AgentContext` keeps only the conversation scope (`installedTools` moves to `AgentTool`, 8.4); replay is removed. Raw payloads to `eldon_file_store`        |
+| Memory stores        | `AgentContext` with `requests[]` and stub `frames[]`; transcript replay of 20 to 50 requests                                                                               | new `EldonModel`s: `AgentStimulus`, `AgentPercept`, `AgentEpisode`, `AgentEntity`, `AgentFact` (with an `owner: agent \| team` column from day one, 11.4), `AgentProcedure` (with guards), `AgentPattern` (4.11), `AgentExpectation`, `AgentTick`. `AgentContext` keeps only the conversation scope (`installedTools` moves to `AgentTool`, 8.4); replay is removed. Raw payloads to `eldon_file_store`        |
 | Recall               | none                                                                                                                                                                       | SQL over the stores: entity join table, activation as a computed column, Postgres full-text on summaries. `pgvector` later, behind the same interface                                                                                                                                                                                                                                  |
 | Tasks                | `AgentTask` with a cron, `AgentTaskRun`, artifacts                                                                                                                         | `AgentTask` gains `origin`, `priority`, `state`, `frames`, `estimate`. Owner-scheduled tasks stay: a cron becomes a standing goal plus timer stimuli. Runs and artifacts become episodes                                                                                                                                                                                                   |
 | Identity             | `Agent`: name, description, `systemInstructions[]`                                                                                                                         | `Agent` gains an `identity` JSON column (6.6) with a hand `ALTER TABLE`; `systemInstructions` become `rules`. Versioned by a small `AgentIdentityVersion` model                                                                                                                                                                                                                        |
@@ -2456,6 +2547,23 @@ whether that could feed curiosity and creativity. Settled:
    line or a brief proposal, never reopen a task (4.10, 5.2 §7, 6.4 §6).
 4. A ninth prompt, `connect` (8.5), and two trace fields, `primed` and `remindings` (10.1).
 
+### 11.11 Decisions from the sixth round: patterns
+
+The author asked where pattern matching lives: "seen something like this, this way worked, the other did not",
+"blue is used a lot here, last time it was because x", "moves at this pace, might be Ari or Sam". The pieces were
+scattered (recall by entity, procedures, guards, change rates, usually-at) and the thing itself was unnamed. Settled:
+
+1. **Patterns are memory's fourth store** (4.11): slots (kinds, never instances), variants with outcomes (the losing
+   branch kept beside the winning one), regularities (what is typical), and `because` links to causes.
+2. **Recall gains a fourth pass, by shape** (4.6), on the slot signature the traits supply.
+3. **Recognition gains a third pass, by pattern** (2.3 §3): a candidate distribution over actors, narrowed by later
+   percepts.
+4. **A procedure is a pattern that converged** (4.11, 5.2 §3); compile is not a separate mechanism.
+5. **Schema-consistent consolidation is code** (5.2 §2): only pattern-breaking episodes cost a model call, so extract
+   gets cheaper as the agent gets experienced.
+6. **Over-generalisation** is held by the guard rules: three episodes to exist, ten observations before a regularity
+   can raise an anomaly or a question, decay, and slots only as specific as the episodes agree on.
+
 ---
 
 ## 12. Space and navigation
@@ -2590,7 +2698,8 @@ These are what a **scan path** compiles from: a procedure for a place kind that 
 third, so that a focused read (2.4) of a long page reads the right part and not all of it. Screen-reader users have
 exactly these habits per site; the agent builds them per place kind and refines them per instance. And they are the
 "where was I" that episodes answer (4.1): an episode's place is a node on the map, and its items' regions are
-recorded with it.
+recorded with it. In the stores, `usually_at` is a regularity on a pattern (4.11) whose slot is the place kind; it has
+its own section because it has its own use.
 
 ### 12.7 Provided and inferred
 
