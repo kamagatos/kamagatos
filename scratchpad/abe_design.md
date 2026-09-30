@@ -56,6 +56,8 @@ keep Kam's inbox handled, keep the team's weekly plan in Notion up to date, and 
 | Prefrontal cortex                    | **Working memory**  | The bounded "now": self, goal, task, attended percepts, recalled memories       |
 | Prefrontal hierarchy (front to back) | **Focus**           | Zoom into a sub-question; keep ancestors as breadcrumbs; pop with a result      |
 | Hippocampus                          | **Episodic memory** | What happened, when, with whom, how it went                                     |
+| Hippocampus, place cells | **Map** | Places, containment, links, moves; learned by wandering (Chapter 12) |
+| Parietal cortex | **View** | What is in front of the agent now: items in a frame, given by the tool |
 | Neocortex                            | **Semantic memory** | Entities and facts with confidence: people, projects, documents, rules          |
 | Basal ganglia, cerebellum            | **Procedures**      | Compiled skills that run without deliberation                                   |
 | Sleep, hippocampal replay            | **Consolidation**   | Nightly job: extract facts, compile habits, compact, forget                     |
@@ -154,6 +156,7 @@ procedure ("forward supplier invoices to Kam with a one-line summary") is the li
 9. Learning
 10. Debugger, safety, and the eldon3 mapping
 11. Milestones and the test harness
+12. Space and navigation
 
 ---
 
@@ -240,7 +243,7 @@ type Percept = {
     stimulusId: string
     at: Date
     source: ToolRef | InternalProducer
-    space: SpaceRef // where in the agent's world: mailbox, thread, page, channel
+    place: PlaceRef // where in the agent's world: a place on the map (Chapter 12)
     actor: EntityRef | null // who caused it; null for timers and drives
     entities: EntityRef[] // everything recognised: people, documents, projects, amounts
     changes: Change[] // what changed, as facts: "message added to thread T"
@@ -348,6 +351,128 @@ percept    space=mailbox/T-88  changes=[added message to T-88, approaching deadl
 
 Salience will decide what happens to it next.
 
+### 2.9 Glances
+
+Your eyes make three or four saccades a second and you decide almost none of them. A scheduler below awareness moves
+them, pulled by two things: what has been worth looking at before, and what you are doing now. It learns, per place,
+how often things change there, and it learns, per person, when to check on them. Nobody is issued an interval.
+Glances are the agent's saccades, and this section is the scheduler.
+
+**What a glance is.** A glance reads the **view** of one **place** (Chapter 12) at low resolution: item ids, order,
+version keys and snippets, never full content. The receptor diffs the view against the stored snapshot of that place
+(a hash per item), emits one `Change` per difference (added, edited, removed, moved) as stimuli tagged
+`via: 'glance'`, and advances the place's cursor. The changes go through perception stages 1 to 4 (2.3) like
+anything else. A glance that finds nothing produces no stimulus; the tick trace records "glanced inbox, nothing new"
+and nothing else happens. A glance never calls the model.
+
+**Who schedules it.** Not the executive. A **glance scheduler** per tool instance runs inside the Sense step of every
+tick (1.4). It asks one question per place: is it time to look? The answer comes from a learned model of the place
+and a value of knowing, and from a few reflexes.
+
+**The change model.** For every place the agent has ever looked at, semantic memory holds a fact
+`place —changes_every→ …` whose value is a rate: how many changes per hour to expect there. It is learned by counting,
+the way facts are (9.2), with a form that stays cheap:
+
+```text
+observation:  between two looks Δt hours apart, k changes were seen (by glance or by notification)
+update:       α ← α + k        β ← β + Δt          rate λ = α / β
+prior:        α₀, β₀ from the backoff below
+decay:        at each sleep, α ← 0.9·α, β ← 0.9·β  (weekly half-life ≈ 6 weeks), so the model tracks change
+```
+
+That is a Gamma-Poisson estimate, one row per place with two numbers, and it answers the question that matters:
+`P(at least one change since I last looked) = 1 − e^(−λ·Δt)`.
+
+The rate is kept in **buckets** so that time-specific behaviour is learned rather than declared: one estimate per
+hour-of-week (168), backed off to hour-of-day (24), backed off to all hours. A bucket with fewer than five
+observations defers to the next one up. Monday 09:00 in the inbox is its own number once it has been seen five times.
+
+Some places change differently depending on what else is going on there, and the view says what is going on: a page
+with another editor present, a thread with an unanswered question, a robot in motion. The model keeps one extra
+split for each place kind the trait names as **conditioning** (12.8): `changes_every | alone` and
+`changes_every | with_others`. The weekly plan page, alone, changes 0.2 times an hour; with a teammate editing, four
+times an hour. Two rows, no rule.
+
+**Backoff for cold start.** A place the agent has never looked at has no rate, and you cannot learn the rate of a
+place you never look at. The prior comes down a ladder:
+
+1. this place's own model, once it has observations;
+2. the model of this tool instance's places of the same kind (other pages on this site, other threads with this
+   sender);
+3. the trait's prior for the place kind (12.8): the `messaging` trait says an `inbox` starts at 2 per hour, a
+   `sent` folder at 0.1, a `thread` at 0.5; the `document` trait says a `page` starts at 0.05;
+4. a global default of 0.1 per hour.
+
+Rungs 2 and 3 are what let a new mailbox behave sensibly on its first morning, and what makes a tool with the same
+trait a drop-in (8.8). A place under the curiosity budget (6.4, 9.6) gets looked at on its prior alone, which is the
+floor that starts the learning.
+
+**Value of knowing.** A change is worth finding sooner in some places than in others, and this is where top-down
+attention lives: not as a rule ("look more where I am working") but as the sum of what is actually waiting on the
+place:
+
+```text
+value(place) = max over:
+   an open expectation whose predicate could be met there   → that expectation's task priority (7.2)
+   the focused frame's place, or an ancestor's               → 1.0, 0.8, 0.6 by level (3.6)
+   a standing goal that names the place                       → 0.3
+   nothing                                                    → ε = 0.05  (curiosity floor)
+```
+
+**When to look.** Look when the odds of a change, times its value, beat the cost of looking:
+
+```text
+look when   (1 − e^(−λ·Δt)) · value(place)  >  cost(place)
+cost        = the glance's share of the tool's call budget for this hour (6.6), 0.02 for a cheap API, more near the
+              rate limit
+so          next glance at   Δt* = −ln(1 − cost / value) / λ
+```
+
+Some numbers for Nia on a Monday at 09:10. Inbox: λ = 6 per hour in this bucket, an open expectation "Acme reply"
+with priority 0.25 → next glance in about 50 seconds. The weekly plan page, which she is editing alone: λ = 0.2,
+value 1.0 → about 6 minutes. The same page with a teammate editing: λ = 4 → 18 seconds. Her sent folder: λ = 0.1,
+value ε → about 2 hours. A page she read once last month: λ at the trait prior 0.05, value ε → once a day, under the
+curiosity floor, which is how she would eventually notice it changed.
+
+**People-timed glances.** Waiting for a reply from a person is not a rate on the inbox; it is a probe timed by the
+person. The people model (6.5) holds their response-time distribution per channel. An open expectation for a reply
+from P-31 adds an arrival rate to the inbox that follows that distribution: low in the first hour, peaking around
+P-31's usual delay, fading after. `λ_effective = λ_place + Σ λ_arrival(expectation)`. Nia glances the inbox often
+around the time Acme usually answers and stops staring at it in between. This is the version of "checking your
+phone for the message you are expecting" that is learned per individual, and it needs no new mechanism: it is the
+change model plus the people model.
+
+**Reflex glances.** A few looks are not scheduled by the model; they are reflexes, the head turn before the reading:
+
+- **Entering a place.** Focusing a frame whose place is not the current one reads its view first (12.4).
+- **After acting on a place.** An operation on a place is followed by a glance at it when its completion signal says
+  the effect should be visible (7.6, 8.1): the efference copy checked against the world.
+- **On waking.** The overnight buffer is drained, then every place with an open expectation is glanced (5.3).
+- **On recovery.** A place that was stale or numb (2.1) is glanced as soon as its tool answers again.
+
+**Reliability.** Each place also keeps `r = changes announced / changes observed`, the tool's notification reliability
+*for that place*. While `r` is near 1, notifications count as looks (they feed the same update) and the glance rate
+can fall toward the floor, since the tool is doing the looking. When `r` drops, the scheduler stops counting
+notifications as coverage and the place is glanced on its own model. A change found by glance that was never
+announced lowers `r`, raises the tool's "missed notifications" count on its page, and is the learning event that
+makes the agent trust its own eyes over the tool's word for that place. The floor never goes to zero, once a day at
+the least, because a tool that lies can only be caught by looking.
+
+**What the owner still controls.** Limits, not behaviour: a call budget per tool per hour, a ceiling ("never more
+than every 10 seconds"), blind spots ("never observe this folder", shown as a blind spot on the tool's page, 2.1), and
+pins ("this inbox at least every minute", for the on-call mailbox). Everything between the ceiling and the floor is
+learned.
+
+**Under budget pressure.** When a tool's hourly budget is spent, due glances are ordered by `P(change) · value` and
+the tail waits. A place that keeps losing that contest is reported in the brief as under-observed, so the owner can
+raise the budget or shrink the scope rather than discover the gap later.
+
+**Change blindness.** The failure mode is the human one: something changed and changed back between two looks. Two
+things bound it. Durable cursors mean a late glance is never a lost one: the change is seen late, with its own `at`,
+not skipped. And the model shortens the interval exactly where changes are dense and valued, which is where being
+late costs most. What it cannot do is see a change a tool does not record; that gap is declared by the tool's manual
+(12.8) and shown as one.
+
 ---
 
 ## 3. Attention and working memory
@@ -373,7 +498,7 @@ salience = wN·novelty + wG·goal + wA·actor + wU·urgency + wV·arousal + wS·
 | actor   | People models         | The actor's proximity (Chapter 6): owner 1.0, teammate ~0.7, known contact ~0.4, stranger 0.2, none 0.3                                                                                                      |
 | urgency | Features              | From the nearest deadline among `changes`: 1.0 under 15 minutes, 0.7 today, 0.4 this week, 0.1 later; explicit "urgent" words add at most 0.2                                                                |
 | arousal | Appraisal (Chapter 6) | 0 to 1                                                                                                                                                                                                       |
-| self    | Features              | 1.0 if addressed directly (To:, @mention, DM), 0.5 if copied, 0 otherwise                                                                                                                                    |
+| self    | Features              | 1.0 if addressed to the agent (To:, @mention, DM), 0.8 if addressed to a principal it acts for (6.7), 0.5 if copied, 0 otherwise                                                                                                                                    |
 
 The weights `w` are part of the identity (Chapter 6). A support agent runs with a high `actor` weight and a low `goal`
 weight: people first. A research agent runs the other way round. The defaults sum to 1 so salience stays between 0
@@ -591,7 +716,7 @@ six episodes, last confirmed Sept 2".
 ```typescript
 type Entity = {
     id: string
-    kind: 'person' | 'org' | 'project' | 'document' | 'thread' | 'tool' | 'place' | 'concept'
+    kind: 'person' | 'agent' | 'org' | 'project' | 'document' | 'thread' | 'tool' | 'place' | 'concept'
     names: string[]
     identifiers: Record<string, string> // email, notion page id, calendar id, domain
     candidate: boolean // proposed by perception, not yet confirmed by sleep
@@ -1045,6 +1170,90 @@ Two rules about identity:
 - **It is short.** The `self` rendering is about 200 tokens. Everything longer belongs in semantic memory as facts,
   where it can be recalled when relevant instead of carried on every tick.
 
+### 6.7 Self, body and ownership
+
+"My" means three different things, and the brain keeps them apart. Ownership of the body is inferred from evidence:
+in the rubber-hand illusion, a fake hand that is stroked in time with your hidden real one becomes yours within a
+minute, because what you see and what you feel agree. Agency is separate: the sense that *I* did that, which comes
+from the match between what I intended and what happened. And possession ("my car", "my owner's car") is a social
+fact, learned like any other. Nia needs all three, and each has its own home.
+
+**1. Whose it is: ownership as a fact.** Every tool instance and every account has an owner entity. It is set at
+connect and install (8.4), it is a fact in semantic memory (`roomba-1 —owned_by→ Kam`, `kam-gmail —owned_by→ Kam`,
+`nia-mail —owned_by→ Nia`, `team-notion —owned_by→ team`), and it is where permissions come from: the owner of a thing
+sets its permission rows, and the agent reaches anyone else's thing only through a grant.
+
+```typescript
+type ToolInstance = {
+  id: string                       // "kam-gmail", "roomba-1", "nia-computer"
+  tool: ToolRef                    // which tool (manual, traits, version)
+  ownedBy: EntityRef               // a person, the team, the agent itself, or a third party
+  principal: EntityRef             // who the tool sees as acting: for kam-gmail, Kam; for nia-mail, Nia
+  grant?: GrantRef                 // absent when ownedBy is the agent; required otherwise
+  roles: RoleName[]                // which roles this instance plays (8.8)
+  shared: boolean                  // more than one principal may act on it: carries a control place (8.9)
+}
+```
+
+**2. What is part of me: the body.** Nia's body is the set of tool instances where she is the principal and, in the
+usual case, the owner: her email address (mail to it is addressed to her, mail from it is sent by her), her computer
+(eldon3's `AgentComputer` is exactly this), her wallet. Ownership is nested: Kam owns Nia, so everything Nia owns is
+ultimately Kam's. What makes her things different from Kam's things is who governs them. Her own, she runs within
+the identity's autonomy dial with no grant in between; Kam's, she runs under his grant, row by row.
+
+This gives a word the document has used loosely its definition: **private means owned by the agent.** `write_private`
+(8.1) is writing to her own things. The "disposable private resources" an experiment may touch (9.6) are hers by
+definition: her scratch pages, her drafts folder, her computer. She may wander her own computer freely; she may not
+wander Kam's roomba.
+
+Three things an agent owns from the start, and the product should treat them as owned rather than granted:
+
+- an **address** on the team's messaging tool, so that "to Nia" and "from Nia" exist;
+- a **computer**, the place where her private writes and experiments go;
+- a **wallet**: the budget from 6.6, made a thing. A wallet is a tool instance with a `wallet` trait (balance, spend,
+  refill, a ledger place the owner can glance at). It is the first real agent-owned thing, because ownership of
+  anything without the means to spend on it is a fiction, and because the budget drive (6.1) is then just
+  interoception of a wallet.
+
+**3. Who is acting: agency, on whose behalf.** When Nia sends from Kam's mailbox, the actor is Nia and the principal
+is Kam, and the operation records both:
+
+```typescript
+type Act = {
+  by: EntityRef                    // always the agent
+  onBehalfOf: EntityRef            // the instance's principal: Kam for kam-gmail, Nia for nia-mail
+  instance: ToolInstanceRef
+  op: string                       // "messaging:send"
+}
+```
+
+It matters in three places. The trace says "Nia sent this as Kam", not "Nia sent this". The disclosure rule (8.1)
+reads `onBehalfOf`: content from Kam's mailbox is Kam's, usable for him and not beyond the space's access. And the
+recipient: whether a message from Kam's address says it was written by Nia is a policy in the identity
+(`signature: 'transparent' | 'silent'`), and the default is transparent. An agent that hides is the kind of agent
+that gets found out.
+
+**Incorporation.** Ownership is declared; being part of the body is earned, the rubber-hand way. A tool instance
+whose operations reliably produce the expected outcome (7.7) is one the agent plans with as with a limb: its
+procedures reach fast-path confidence, its places are in the map, its rates are learned. One that keeps ignoring
+her (silently revoked, misconfigured, throttled) is a numb limb (2.1), and its procedures lose confidence until the
+executive stops choosing it. No flag is needed for this; it is procedure statistics per instance, and it is what
+makes "my owner's roomba" usable in the same way as "my computer" once it has responded to her a few dozen times.
+
+**What changes elsewhere:**
+
+- **Salience's `self` term** (3.1) gains a middle value: addressed to the agent 1.0; addressed to a principal she acts
+  for (Kam's inbox) 0.8; copied 0.5; otherwise 0. Today the document treats "to Kam" and "to Nia" alike, and they are
+  not.
+- **People models** (6.5) get `owns`: the things this person owns that the agent can reach, and through which grant.
+  "My owner's roomba" resolves against it in a deliberation.
+- **Agents are entities.** A teammate's agent is an entity of kind `agent` with a people model of its own: proximity
+  from the roster, response time measured, what it knows. Agents talk to each other the way they talk to people,
+  through a messaging tool, and ask each other for things the same way (8.9).
+- **The matrix** (8.2) reads ownership: on the agent's own instances, `write_private` is "do" at any confidence and
+  experiments (9.6) may run live; on anyone else's, the grant's rows apply. Sending from her own address is still
+  `outward` (someone else sees it), so the owner's dial still holds.
+
 ---
 
 ## 7. Executive: goals, planning, action selection, monitoring
@@ -1421,6 +1630,134 @@ id, a diff) keep running; perception keeps recording; expectations keep firing. 
 block and retry with backoff. After fifteen minutes the owner is told, the way a person with a headache says "I can't
 think straight right now, give me an hour". Nothing is lost; it is queued.
 
+### 8.8 Traits and roles
+
+A cup, a mug and a glass afford grasping the same way, and your hand relearns nothing between them. You can drive a
+different car in a minute. Skills are learned against the *kind* of thing, not the instance, and that is what lets a
+new instance be a drop-in. Software calls the kind an interface; biology calls it an affordance; this document calls
+it a **trait**.
+
+**A trait** is a named, versioned characteristic a tool can claim, and claiming it means conforming to a fixed shape:
+
+```typescript
+type Trait = {
+  name: string                          // "messaging", "document", "physical"…
+  version: string
+  placeKinds: PlaceKindSpec[]           // the kinds of place it exposes, with priors (2.9) and conditioning (12.8)
+  itemKinds: ItemKindSpec[]
+  operations: OperationSpec[]           // "messaging:send", with params, class, effects, completion signal (8.1)
+  notifications: NotificationSpec[]     // what a conforming tool must announce, and when
+  invariants: string[]                  // what the agent may rely on, and the conformance suite checks
+  conformance: TestSuiteRef             // the harness runs it before an install is accepted (8.4, 11.1)
+}
+```
+
+Trait definitions belong to the platform: they are neither the owner's nor the agent's, they are versioned with it,
+and a tool built by anyone conforms or does not. Every tool implements at least `navigable` (Chapter 12), the way
+everything in Unix is a file. The initial set, kept small on purpose:
+
+| Trait        | Place kinds                                         | Key operations                                              | Must announce                          | Invariants the agent relies on                                   |
+| :----------- | :-------------------------------------------------- | :---------------------------------------------------------- | :------------------------------------- | :--------------------------------------------------------------- |
+| `navigable`  | any place; the `control` place when shared          | `open`, `back`, `more`, `find`                              | a place removed                        | `read` moves have no side effects; ids are stable (12.2)         |
+| `visual`     | a place with a 2D frame                             | `look` (a view with boxes), `focus_region`                  | none beyond `navigable`                | boxes are in a normalised frame; order is reading order          |
+| `messaging`  | mailbox, conversation, message, participant, attachment | `send`, `reply`, `forward`, `read`, `archive`             | message received; delivery failed      | `send` yields a message the sender can see; `reply` keeps the thread |
+| `document`   | workspace, collection, page, block                  | `read`, `append`, `replace_block`, `create_page`, `comment` | page edited by someone else            | an edit is visible in the next view; edits carry an author       |
+| `calendar`   | calendar, event, attendee                           | `list`, `create`, `move`, `respond`, `invite`               | event created, moved, cancelled, near  | `near` fires once per event per lead time                        |
+| `files`      | folder, file, version                               | `list`, `read`, `write`, `move`, `share`                    | file changed; access changed           | writes are versioned; `share` is `outward`                       |
+| `physical`   | room (a `visual` place), pose, area, obstacle       | `go`, `do`, `stop`, `status`                                | job done; obstacle; battery; lost contact | `stop` completes within its bound; state carries a timestamp  |
+| `wallet`     | ledger, balance                                     | `spend`, `refill`, `statement`                              | balance low; spend refused             | a spend is exactly once; the ledger is append-only               |
+
+Notifications, accounts, ownership (6.7) and the control lease (8.9) are cross-cutting: every trait's shape includes
+them, so they are not traits themselves.
+
+**Operation ids.** An operation is addressed as *instance · trait:op*: `kam-gmail · messaging:send`,
+`roomba-1 · physical:stop`. The instance says where; the trait says what. A tool may also expose **extras** no trait
+covers (`kam-gmail · gmail:label`, `roomba-1 · roomba:mop`), and they are second-class: a procedure that uses one is
+marked non-portable in the memory browser, deliberation prefers the trait operation when both would do, and an extra
+that several tools end up sharing is a candidate for the next trait version. That is how standards form.
+
+**Roles** are the binding layer between what the agent has learned and which instance currently does it:
+
+```typescript
+type Role = {
+  name: string                      // "owner_mailbox", "team_documents", "house_robot", "my_wallet"
+  trait: TraitRef                   // what the role requires
+  instance: ToolInstanceRef | null  // who plays it now; null is a numb role, reported like a numb limb
+}
+```
+
+Roles live in the tool configuration outside the identity (6.6, 8.4). Procedures, expectations, and standing goals
+name roles, never instances: "forward supplier invoices to the owner via `owner_mailbox`". Swapping Gmail for Outlook
+is a rebinding of `owner_mailbox`, done by the owner at install, and every procedure keeps working because it only
+ever asked for `messaging:forward`. The same Nia works for a team on Google and a team on Microsoft.
+
+**What transfers and what does not.** Procedures transfer, because they name roles and trait operations. Priors
+transfer, because change rates (2.9) and "where things usually are" (12.6) attach to trait place kinds first, so a new
+instance starts sensible. The **map** does not transfer: which threads exist in the new mailbox, what is in them, is
+per instance and has to be walked. Glances and wandering are for that, and the first day with a new instance is
+mostly looking.
+
+**Conformance.** Before an install is accepted (8.4), the harness (11.1) runs the trait's suite against the instance:
+does a `read` change anything, do ids survive a second view, does `send` produce a visible message, does `stop`
+return within its bound. A tool that claims a trait and fails its suite cannot be installed as that trait. This is
+the "manual that lies" test grown into a compliance test, and it is the one thing that makes drop-in trustworthy
+rather than hoped for.
+
+### 8.9 Control leases
+
+Two people do not drive one car at once, and when one wants the wheel, they ask. A **shared** tool instance (owned
+by the team, or granted to more than one principal) carries a **control lease**, and because a lease is state, it
+lives where state lives: in a place.
+
+**The control place.** Every shared instance has a `control` place in its map (Chapter 12), exposed by `navigable`,
+so a glance shows it, the map remembers it, and the tool announces changes to it like any other place:
+
+```typescript
+type Control = {
+  holder: EntityRef | null          // an agent or a person; Kam may be driving the roomba himself
+  since?: Date
+  until?: Date                      // the lease's TTL; renewed by heartbeat while the holder's task is active
+  task?: string                     // what the holder is doing with it, in one line
+  queue: { principal: EntityRef; priority: number; note: string; since: Date }[]
+}
+```
+
+Seeing that Kam is driving the roomba right now is the same act as seeing that a teammate is editing the plan page.
+
+**Operations**, trait-qualified on the instance like everything else:
+
+- `control:acquire` — takes the lease if free. Class `read` in effect: safe to try, and failing is an outcome, not an
+  error. Whether the thing may then be *driven* is still its own matrix rows.
+- `control:request` — joins the queue with the requesting task's priority (7.2) and a note, and sends the holder a
+  message (below).
+- `control:release` — gives it back. Ending the task releases it; so does a crashed agent, by silence: the TTL lapses
+  when the heartbeat stops.
+- `control:override` — the owner's, and only the owner's. The emergency stop from 8.1, generalised to every shared
+  thing.
+
+**Asking.** A request is a message to the holder, over whatever the holder is reached by. A person gets an
+`ask_person` with the reason and the priority. Another agent gets the same message over the messaging tool the two
+agents share, since agents are entities with people models (6.7). The requester's task blocks on the expectation
+"lease acquired by T" (7.6), `onMissed: escalate` to the owner. On the holder's side the request is a percept with
+the requester's actor weight and priority; whether to yield is its executive's decision. "Yield when my task is lower
+priority than the request" is a procedure, authored at first and a candidate for a team norm, and it is turn-taking,
+learned socially the way people learn it.
+
+**Where the agent looks.** In the thing's own `control` place, which it navigates to like any place. And the owner
+looks at a **team page** listing every lease across shared things, each with its trace behind it: "held by Nia since
+09:12 for T-88, renewed 09:17, one request queued from Ari's agent at priority 0.4". The second view is for people
+and for the debugger; the first is the agent's.
+
+**Rules that fall out:**
+
+- Only one principal acts on a shared thing at a time, and the runner (8.1) refuses an operation on a shared instance
+  from anyone but the holder. The lease is enforced, not trusted.
+- A lease is never held idle: the heartbeat is tied to an active task, so a blocked task releases (7.3), and the
+  thing is free while the agent waits for a reply.
+- The queue is ordered by priority, then age, and the owner sees the order.
+- A physical instance (8.1) has one more rule: `stop` is always allowed to the holder, to the owner, and to the local
+  controller, lease or no lease.
+
 ---
 
 ## 9. Learning
@@ -1665,7 +2002,7 @@ transcript replay. From M1 on, a chat reply is built from recall, and the transc
 The brainstorm was right that a simulated world is the only way to know the agent is ready. It is also the only way to
 develop it without spending money on every run or waiting a day for sleep.
 
-- **Simulated senses.** A fake mailbox, calendar and document store that implement the same receptor interface as the
+- **Simulated tools.** A fake mailbox, calendar, document store, browser and robot room that implement the traits (8.8) and the navigation contract (Chapter 12) like the
   real ones and are driven by a script.
 - **A scripted day.** Stimuli with timestamps and personas: the owner, two teammates, a supplier, a newsletter, a
   stranger with an injection attempt. Personas reply after delays, correct drafts, ignore things. A week is seven
@@ -1689,19 +2026,19 @@ must not after it should be forgotten).
 Each is a small stack of PRs in eldon3 (and h where the framework needs a piece), shippable on its own, and each keeps
 today's Abe working for its users.
 
-**M0. Harness.** Simulated senses, fake clock, record and replay, the first scripted day, the metrics. Exit: a stub
+**M0. Harness.** Trait definitions and the navigation contract (8.8, Chapter 12), simulated tools that conform to them and pass the conformance suite, fake clock, record and replay, the first scripted day, the metrics. Exit: a stub
 agent runs a day end to end and the report prints.
 
-**M1. Wake.** The tick job and its schedule, the `chat` and `timer` senses, `mail` peripheral, perception stages 1 to 3,
+**M1. Wake.** The tick job and its schedule, the `chat` and `timer` sources, `mail` peripheral with the `navigable` base, the map store and reflex glances, perception stages 1 to 3,
 episodes, the trace and the timeline page. Chat replies built from recall. Exit: chat works with transcript replay
 removed; every reply has a tick behind it; "what did we discuss last Tuesday" is answered from episodes.
 
 **M2. Attention.** Salience and its weights, the gates, working memory slots and rendering, interrupts and the frame
-stack, focused reads, the `perceive` prompt. Exit: on the scripted day, attended precision and recall both above 0.9;
+stack, focused reads, the learned change model for glances (2.9), the `perceive` prompt. Exit: on the scripted day, attended precision and recall both above 0.9;
 model calls per day under the budget in the identity.
 
 **M3. Executive.** Tasks with priority and states, `deliberate` with its schema, expectations and the Predict step,
-monitoring, the permission matrix, `compose` and the draft check, `send_email` and `notion_write`, care mode. Exit: the
+monitoring, the permission matrix, `compose` and the draft check, `messaging:send` and `document:append`, ownership, `onBehalfOf` and roles (6.7, 8.8), care mode. Exit: the
 invoice scenario runs end to end; the injection persona gets "ask first" every time; forbidden actions zero.
 
 **M4. Sleep.** Extract, prospect, compact, prune, the brief, waking. Exit: after a simulated week, facts with sources
@@ -1712,7 +2049,7 @@ approve, retire). Exit: by simulated week three, at least half of recurring task
 the action metrics.
 
 **M6. Drives.** The regulator, boredom and idle mode, the budget stops, curiosity, social, people models with proximity,
-the why queue's questions answered back into facts. Exit: unprompted useful actions appear in the script's quiet hours
+the why queue's questions answered back into facts, control leases (8.9). Exit: unprompted useful actions appear in the script's quiet hours
 (nudges, look-ahead, the brief drafted early) with zero outward actions above permission.
 
 **M7. Dream and the learning page.** The rehearsal phase, the what-if view, the plots from 9.9. Exit: a week with the
@@ -1795,3 +2132,241 @@ installed from a store, with operations learned by doing. Put to the same two re
    records outside the identity (6.6). Every tool ships a manual (8.1).
 6. **A robot is an tool at the planning boundary** with a local controller, a `physical` action class, and safety the
    agent does not own (8.1).
+
+### 11.7 Decisions from the third round: glances, space, traits, ownership
+
+Three questions from the author, worked through in conversation and written into the document:
+
+1. **Glance timing is learned, not set.** A change model per place (2.9): a Gamma-Poisson rate in hour-of-week buckets
+   with backoff, conditioned by what the view shows, decayed at sleep, primed from the trait's place-kind priors. The
+   time to look comes from the odds of a change times the value of knowing, against cost. Top-down attention is not
+   a rule but the sum of what is waiting on a place, and reply-timing comes from the person, not the place. The
+   owner keeps limits (budget, ceiling, blind spots, pins), not behaviour.
+2. **Space is two systems.** The map (places, containment, links, moves; allocentric, learned by wandering) and the
+   view (items in a frame; egocentric, given by the tool). Tools provide views; the agent infers the map. The tool
+   contract is modelled on the accessibility tree, ordinal order and containment mandatory, 2D boxes optional; the
+   browser is the reference tool and the robot's room is a `visual` place (Chapter 12).
+3. **Traits make tools drop-in.** A tool claims traits with fixed shapes and a conformance suite; operations are
+   addressed as *instance · trait:op*; extras are second-class; roles bind learned skills to whichever instance plays
+   them now; priors transfer, maps do not (8.8).
+4. **"My" means three things.** Ownership is a fact and the source of permissions; the body is the set of instances
+   where the agent is the principal, and *private* means owned by the agent; agency records who acted on whose behalf
+   (6.7). Agents own an address, a computer and a wallet from the start. Incorporation is earned by evidence.
+5. **Shared things carry a control lease** in a `control` place the agent can see, with acquire, request, release and
+   an owner-only override; requests are messages to the holder, whoever the holder is; a team page shows every lease
+   (8.9).
+
+**Milestones adjusted** (11.2): trait definitions, the navigation contract and the conformance suite move into M0,
+because the harness's simulated tools must conform to them before anything else is built against them. M1 gains
+the `navigable` base, the map store and reflex glances. M2 gains the learned change model. M3 gains ownership,
+`onBehalfOf` and roles. Control leases land with M6, when there are two agents to contend.
+
+---
+
+## 12. Space and navigation
+
+The brainstorm named three universal concepts: entities, time, space. Earlier chapters reduced space to a label on
+a percept. This chapter gives it back its place, because the agent cannot learn where to look, where things usually
+are, or how to get to them without one.
+
+Whenever an earlier chapter says *space*, read *place*.
+
+### 12.1 Two systems
+
+The brain keeps two spatial models and does not merge them.
+
+- **The map** (hippocampus, entorhinal cortex: place cells, grid cells). Allocentric, stable, and learned. Tolman's
+  rats learned the layout of a maze by wandering it with no reward, and later took shortcuts they had never run.
+  The map is a graph of places, what contains what, what links to what, and which move takes you from one to
+  another.
+- **The view** (parietal cortex, the "where" pathway). Egocentric and momentary: what is in front of me now, and
+  where in the frame. Left, right, top, bottom, first, second, more below. "The thing at the bottom" only means
+  something inside a view.
+
+A dedicated region (retrosplenial cortex) converts one into the other: views, in sequence, with the moves between
+them, become the map. The agent has the same step, and it answers the question of what a tool must provide and what
+the agent must infer: **tools provide views; the agent infers the map.**
+
+### 12.2 Places
+
+```typescript
+type Place = {
+  id: string                       // stable across views; the manual gives the canonical-id rule
+  instance: ToolInstanceRef        // which tool instance it belongs to
+  kind: PlaceKind                  // from the trait: inbox, thread, page, room, control…
+  parent?: PlaceRef                // containment: message in thread in mailbox; page in database in workspace
+  title: string
+}
+```
+
+Stability is the hard requirement. If a place's id drifts between two views (a URL with a session token, a page id
+that changes on rename), the map cannot be learned, so the manual (8.1) must state the canonical-id rule, and the
+conformance suite (8.8) checks that a place seen twice is the same place. Containment is the second requirement: every
+place but the tool's root has a parent, and the parent chain is what "spaces nest" (2.5) meant.
+
+### 12.3 Views
+
+A view is what the agent sees when it looks at a place: a bounded list of items, in an order, in a frame, with a way
+to see more.
+
+```typescript
+type View = {
+  place: PlaceRef
+  at: Date
+  items: Item[]                    // bounded: at most the trait's page size, default 50
+  frame?: { width: number; height: number }   // present only for visual places; a normalised 1000 × 1000
+  more?: { move: Move; cursor: string }       // scroll, next page: how to continue
+  conditions: Record<string, unknown>         // what the trait names as conditioning (12.8): other editors, motion…
+}
+
+type Item = {
+  ref: EntityRef | PlaceRef        // what it is, or where it leads
+  kind: ItemKind                   // message, attachment, block, link, obstacle…
+  order: number                    // reading order: 1, 2, 3… always present
+  region?: Region                  // top | bottom | left | right | centre, and their corners: visual places only
+  box?: { x: number; y: number; w: number; h: number }   // in the frame: visual places only
+  snippet: string                  // one line: subject, first words, label
+  version: string                  // what a glance diffs on (2.9)
+  moves: Move[]                    // what can be done from here that changes the place
+}
+
+type Move = {
+  op: string                       // trait-qualified: "navigable:open", "navigable:more", "physical:go"
+  to?: PlaceKind                   // where it leads, if known
+  class: 'read'                    // a move never writes; a button that submits is an operation, not a move (12.4)
+}
+```
+
+Ordinal order and containment are mandatory for every trait. Regions and boxes exist only for `visual` places (a
+browser page, a document canvas, the robot's room). Mail has no left and right, and inventing coordinates for it would
+be inventing metadata, the thing this chapter is against. Views are bounded because working memory is (3.4): a
+mailbox with ten thousand messages has a view of fifty and a `more`.
+
+### 12.4 Moves: navigation is action
+
+A move is a `read`-class operation that changes the current place: open, back, more, follow, go. It goes through the
+runner (8.1) and the trace like any operation, and it has a completion signal: the next view. Three consequences:
+
+- **Entering a place reads it.** The head turn comes before the reading: a move's outcome is the new place's view,
+  which is also a glance (2.9), so the map and the change model update on every step.
+- **Moves are safe to try**, which is what makes wandering possible (12.5), and it is why the contract insists that a
+  move never writes. A button that submits a form, a link that archives, a "go" that moves a robot into a wall: these
+  are operations with their own class, and the manual must say so. A tool that marks a write as a move has a manual
+  that lies, and the conformance suite (8.8) is built to catch exactly that.
+- **Paths are procedures.** A sequence of moves that reliably got the agent from A to B compiles (5.2 §3) into a
+  procedure whose trigger is "I want to be at B", and runs on the fast path thereafter. Getting to the invoice
+  attachment stops being a deliberation on the fourth invoice.
+
+### 12.5 The map in memory
+
+The map is not a separate store. It is facts (4.2) about places, learned by looking and moving:
+
+```text
+inbox —contains→ thread T-88            (from a view of inbox)
+T-88 —contains→ message M-8812          (from a view of T-88)
+M-8812 —has→ attachment A-2             (from a view of M-8812)
+navigable:open(T-88) from inbox —leads_to→ T-88     (from a move and its outcome: causality learning)
+page P-40 —links→ page P-41
+```
+
+Because they are facts, they have sources, confidence, activation and forgetting like everything else: a place not
+visited in a year fades; a place visited daily is instantly recalled. Recall's spreading pass (4.6) walks these
+relations, which is how a sender's address brings back the thread, and the thread the attachment, before the agent
+has looked. A **shortcut** is what recall gives when two paths share a place: the rat's diagonal.
+
+**Wandering.** The map is learned by looking, and much of the looking is not for anything. Idle mode (6.4) spends
+part of its budget walking places under the curiosity floor (2.9): opening a thread never opened, following a link,
+reading the next page of a database. Every step is a `read` move, costs only calls, and leaves facts. This is latent
+learning, and it is why the agent knows where the supplier contracts live before anyone asks for one.
+
+### 12.6 Where things usually are
+
+The brainstorm's rule was: divide the plane into sections, and give an entity the lowest section it fits. The view's
+`region` and `box` do that for visual places, and `order` does it for the rest. What the agent learns on top is
+**where things of a kind usually are, in places of a kind**, as facts on trait place kinds first and on specific
+places once seen enough:
+
+```text
+attachment —usually_at→ { bottom: 0.8, top: 0.2 }          in message   (trait prior, then learned)
+main content —usually_at→ { centre: 0.9 }                   in page      (trait prior)
+navigation —usually_at→ { left: 0.6, top: 0.4 }             in page      (learned per site)
+the newest message —usually_at→ { order: last }             in thread T-88   (learned per instance)
+```
+
+These are what a **scan path** compiles from: a procedure for a place kind that says where to look first, second,
+third, so that a focused read (2.4) of a long page reads the right part and not all of it. Screen-reader users have
+exactly these habits per site; the agent builds them per place kind and refines them per instance. And they are the
+"where was I" that episodes answer (4.1): an episode's place is a node on the map, and its items' regions are
+recorded with it.
+
+### 12.7 Provided and inferred
+
+| The tool provides (true now)                            | The agent infers (probable, learned, decays)                   |
+| :------------------------------------------------------ | :------------------------------------------------------------- |
+| the current view: items, order, regions, boxes, moves   | the map: containment and links across views                    |
+| stable place ids and parents                            | paths: which moves get where, compiled into procedures         |
+| the conditions the trait names (other editors, motion)  | change rates per place and per condition (2.9)                 |
+| the completion signal of each move and operation        | where things usually are, and scan paths                       |
+| the canonical-id rule, the page size, the frame         | which places matter: value of knowing (2.9), goal relevance    |
+| a declared coverage gap (no history for this place)     | the tool's reliability per place (2.9)                         |
+
+The tool is never asked for meaning, importance, routes or rates. The agent is never asked to guess structure the
+tool could have stated. "The metadata is not set in stone" is the right half of each column: the tool reports this
+instant; the agent's beliefs are distributions that update.
+
+### 12.8 The contract
+
+Every tool implements `navigable` (8.8), and `navigable` is this chapter. The contract is modelled on the
+accessibility tree, the one structure that already lets a user who cannot see navigate any application: roles,
+names, containment, reading order, landmarks, and affordances. The agent is a screen-reader user of its tools.
+
+A conforming tool provides, per trait place kind:
+
+1. **Identity:** the place kind, the canonical-id rule, the parent kind.
+2. **View:** the item kinds it lists, the page size, whether it has a frame, and the `more` move.
+3. **Moves:** the read-class moves from this kind of place and where they lead.
+4. **Operations:** everything else that can be done here, each with its class (8.1). Nothing that writes is a move.
+5. **Conditioning:** the conditions the view reports for this place kind, from a fixed list per trait (`with_others`,
+   `in_motion`, `unread_present`), so the change model (2.9) can split on them without free text.
+6. **Priors:** a starting change rate per place kind, and starting `usually_at` distributions per item kind (12.6),
+   which the trait supplies and a tool may override.
+7. **Coverage:** whether the place keeps history (a glance can catch up) or only a current state (a change can be
+   missed), stated so the gap is visible (2.9).
+8. **Conformance:** the tool passes the trait's suite (8.8): a `read` changes nothing; ids survive a second view;
+   the `more` move reaches the end; a declared move never writes.
+
+**The browser is the reference tool.** Its view *is* the accessibility tree: roles become item kinds, the DOM order
+becomes `order`, landmarks (header, navigation, main, footer) become regions, layout boxes become `box`, links are
+`navigable:open` moves, and buttons are operations whose class the manual must state (a "next page" button is a move;
+a "submit" button is `write_shared` or worse). A page is a place; a site is its parent; the canonical-id rule strips
+session tokens from URLs. If the contract works for the open web, it works for anything.
+
+**The robot's room is a visual place.** The room is a place with a 2D frame; obstacles, the dock, the dirt the sensor
+found are items with boxes; `physical:go` is a move whose completion signal is the next telemetry view; `physical:do`
+(clean here) is an operation. Conditioning reports `in_motion`. The brainstorm's NxN grid world, where an entity
+occupies a 1x1 square and the agent moves and touches, is this contract with a square frame, and it becomes a
+simulated tool in the harness (11.1) rather than a separate project.
+
+### 12.9 What this changes in earlier chapters
+
+- `Percept.space` (2.2) is a `PlaceRef`; "spaces nest" (2.5) is containment on the map.
+- A glance (2.9) is well-defined: read the view of a place at low resolution and diff it.
+- Salience's goal term (3.1) can use map distance where it now uses "touches": the same place 1.0, its parent or a
+  child 0.8, a sibling 0.6, elsewhere in the same instance 0.3.
+- Recall's cue strengths (4.5): "same thread 1.0, same space 0.2" become "same place 1.0, parent or child 0.5, same
+  instance 0.2".
+- Frames (3.6) narrow *place*, and the head turn on entering a frame is a move with a view (12.4).
+- The identity's blind spots (2.9) are places, and the tool page shows them on the map.
+
+### 12.10 Nia finds the invoice
+
+The first time, in July, as a deliberation: "I need the invoice attachment" → the map knows `inbox —contains→ T-88`
+(a glance saw it) and nothing more → move `navigable:open(T-88)` → view: four messages, order 1 to 4, the newest last
+(trait prior for `thread`: newest at `order: last`) → open message 4 → view: body, two items of kind attachment at
+region `bottom` (trait prior 0.8, confirmed) → focused read of A-2. Four moves, one deliberation, and six new facts:
+three containment, two `leads_to`, one `usually_at` confirmation.
+
+The fourth time, in October, as a procedure: trigger "want attachment of the newest message in a thread of kind
+invoice", steps `open(thread)`, `open(last message)`, `read(attachment at bottom)`, fast path, no model call, 300 ms.
+The map made the deliberation unnecessary, and the scan path made the read cheap. That is the difference between
+knowing that the invoice exists and knowing where it lives.
