@@ -62,25 +62,26 @@ and most numbers in the document are defaults to be measured there.
 We are not simulating neurons. We are copying the brain's **organisation**: which jobs it splits apart, what it keeps
 small, what it does in the background, and what it forgets. Each of those choices solves a problem that we also have.
 
-| Brain trait                                 | Problem it solves for us                                                | Experiment that would reject it (11.1)                                                                            |
-| :------------------------------------------ | :---------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------- |
-| Continuous sensing, but a tiny attention    | Being always on is cheap; only a few things ever reach the LLM          | Learned attention misses more obligations than screening everything would at the same cost                        |
-| Working memory holds ~4 to 7 chunks         | Prompts stay small, fast, and readable in a debugger                    | For each task kind, a wide rendering finishes with fewer errors and fewer calls than a split or a zoom does (3.4) |
-| Several memory systems, not one             | Facts, events and skills need different storage and different retrieval | A single store with retrieval does as well on the held-out weeks                                                  |
-| Sleep consolidates and forgets              | Memory stays fast and relevant; noise is dropped, not kept              | Forgetting loses items the agent later needed; there is no gain over archiving everything                         |
-| Habits run without thinking                 | Most repeated work costs no LLM call and takes milliseconds             | Compiled procedures do not beat authored procedures plus a model, measured as completion per cost                 |
-| Prediction first, then surprise             | Novelty and errors are detected for free, and they drive learning       | Expectation misses do not predict corrections better than chance                                                  |
-| Drives (hunger, boredom, curiosity)         | The agent acts unprompted, and it knows when to stop spending           | Unprompted actions are not useful more often than they cost                                                       |
-| Emotion tags memories and steers attention  | Important things are remembered and handled with care                   | Arousal-weighted retention does not keep what corrections later needed                                            |
-| Language is one region, not the whole brain | The LLM is an organ that the agent uses; it is not the agent itself     | The baseline B0 (a capable model, durable tasks, an enforced runner) matches the full agent                       |
+| Brain trait                                 | Problem it solves for us                                                 | Experiment that would reject it (11.1)                                                                            |
+| :------------------------------------------ | :----------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------- |
+| Continuous sensing, but a tiny attention    | Being always on is cheap; only a few things ever reach the LLM           | Learned attention misses more obligations than screening everything would at the same cost                        |
+| Working memory holds ~4 to 7 chunks         | Prompts stay small, fast, and readable in a debugger                     | For each task kind, a wide rendering finishes with fewer errors and fewer calls than a split or a zoom does (3.4) |
+| Several memory systems, not one             | Facts, events and skills need different storage and different retrieval  | A single store with retrieval does as well on the held-out weeks                                                  |
+| Sleep consolidates and forgets              | Memory stays fast and relevant; noise is dropped, not kept               | Forgetting loses items the agent later needed; there is no gain over archiving everything                         |
+| Habits run without thinking                 | Most repeated work costs no LLM call and takes milliseconds              | Compiled procedures do not beat authored procedures plus a model, measured as completion per cost                 |
+| Prediction first, then surprise             | Novelty and errors are detected for free, and they drive learning        | Expectation misses do not predict corrections better than chance                                                  |
+| Drives (hunger, boredom, curiosity)         | The agent acts unprompted, and it knows when to stop spending            | Unprompted actions are not useful more often than they cost                                                       |
+| Emotion tags memories and steers attention  | Important things are remembered and handled with care                    | Arousal-weighted retention does not keep what corrections later needed                                            |
+| Language is one region, not the whole brain | The LLM is an organ that the agent uses; it is not the agent itself      | The baseline B0 (a capable model, durable tasks, an enforced runner) matches the full agent                       |
+| Thinking ahead at a choice point (7.10)     | Hard decisions are tested before they are taken, and the testing is code | Directed recall, durable plans and simulators do not improve correct, timely completion at equal or lower cost    |
 
-The last row is the most important. In most "LLM agents" the model is the whole brain: memory is a transcript, a
-decision is the next token, and every step is a call. Here the LLM is the **language and reasoning cortex**. Everything
-else (sensing, attention, memory, drives, action selection, monitoring) is ordinary code with ordinary data. What this
-buys for certain is control: the architecture decides when the model runs and what it sees. Whether it also improves the
-model's judgement is not asserted; it is what the ablation ladder (11.1) measures, mechanism by mechanism, against a
-baseline that is just a capable model over the same stores and the same runner. The goals from the brainstorm, and what
-each of them rests on, are these:
+The language-cortex row is the most important. In most "LLM agents" the model is the whole brain: memory is a
+transcript, a decision is the next token, and every step is a call. Here the LLM is the **language and reasoning
+cortex**. Everything else (sensing, attention, memory, drives, action selection, monitoring) is ordinary code with
+ordinary data. What this buys for certain is control: the architecture decides when the model runs and what it sees.
+Whether it also improves the model's judgement is not asserted; it is what the ablation ladder (11.1) measures,
+mechanism by mechanism, against a baseline that is just a capable model over the same stores and the same runner. The
+goals from the brainstorm, and what each of them rests on, are these:
 
 - **Debuggability:** every tick leaves a trace of what was sensed, what won attention, what was recalled, what was
   decided and why. The agent explains itself from the trace, not from a fresh guess.
@@ -749,13 +750,14 @@ This is what `context:focus` in the brainstorm means. A **frame** is one level o
 type Frame = {
     question: string // what this level is trying to settle
     place: PlaceRef // narrowed from the parent: board → corner; document → section
+    scope?: { places: PlaceRef[]; entities: EntityRef[] } // a planning frame spans several places (7.10); place is then where attention is
     done: CompletionPredicate // what would count as settled (observable, 7.8)
     constraints: string[] // permissions, deadlines, rules inherited from above; never fade
     steps: Step[]
     currentStep: number
     history: string[] // chunked when long (3.5)
     scratch: string
-    budget: { deliberations: number } // a share of the parent's remaining budget (7.5)
+    budget: Budget // a share of the parent's remaining budget (7.5)
     kind: 'root' | 'zoom' | 'interrupt'
 }
 ```
@@ -1140,6 +1142,34 @@ one. Recall runs in passes. All of them are deterministic, and the first one ign
 Candidates are scored by activation `A`. Everything under a retrieval threshold is dropped, and the top items fill the
 `recall` slot up to its capacity of seven; procedures, pinned facts and a matching pattern are given the first places.
 Each recalled item gets an access recorded. Recall never calls the model.
+
+**Directed recall.** The passes above run on their own, from whatever is in working memory. A deliberation can also ask
+(7.10): "what happened the last times Acme disputed an invoice, including the times it went wrong". The model states
+what it is looking for, and code does the looking:
+
+```typescript
+type RecallQuery = {
+    text?: string // words to search for
+    entities?: EntityRef[]
+    places?: PlaceRef[]
+    time?: TimeRange // at its grain (13.4)
+    kinds?: ('episode' | 'fact' | 'procedure' | 'pattern' | 'person')[]
+    relation?: 'support' | 'contradict' | 'precedent' | 'failure' // failure: episodes with a mismatch or a correction
+    limit: number // default 7
+    cursor?: string // to page through the rest
+}
+```
+
+A directed query runs the same passes with the query as the cue, and three things differ. It **ignores the retrieval
+threshold**: a cold item that nobody has touched for a year is reachable by asking for it, which is what the threshold
+would otherwise hide behind the same seven familiar items. It **returns failures with successes**: when a query about
+precedents matches any episode that ended in a mismatch or a correction, one place in the page is reserved for the
+strongest of them, and the rest are reachable by paging and counted in the coverage, so that a plan is not built on the
+times it worked. And it **reports its coverage**: how many items matched, how many were returned, whether the rest is
+paged, and which stores were searched. "Nothing found" means nothing matched within that coverage; it never means the
+thing did not happen (5.2 §5). The conflicts pass still runs on what comes back. Each returned item gets one access per
+task, not one per query, so that a planning task which asks three times does not make its own evidence look popular. The
+results render in the `recall` slot, above the automatic ones, and the trace keeps the query beside them.
 
 ### 4.7 Reconsolidation
 
@@ -1897,17 +1927,33 @@ type Task = {
     state: 'queued' | 'active' | 'suspended' | 'blocked' | 'done' | 'dropped'
     frames: Frame[] // the stack (3.6); frames[0] is the root, the last is the focus
     care: boolean // care mode (6.3)
-    budget: { deliberations: number } // remaining; shared out to zooms and splits, never reset
-    estimate: { remainingMinutes: number; spread: number; source: 'procedure' | 'manual' | 'deliberation' }
+    budget: Budget // remaining; shared out to zooms and splits, never reset
+    estimate: {
+        remainingMinutes: number // active work
+        waitMinutes: number // expected time spent blocked: replies, completion signals
+        spread: number
+        source: 'procedure' | 'manual' | 'deliberation'
+    }
+    plan?: Plan // when the task needed more than a few steps (7.10)
     waitingOn?: ExpectationRef // when blocked
+}
+
+type Budget = {
+    deliberations: number // model calls on the deliberate prompt; default 6, a measured default (11.5)
+    money: Money // model spend, tool spend and simulator spend together
+    activeMinutes: number // the agent's own time, including requests (7.10)
 }
 ```
 
-**Every task carries a time estimate.** The estimate counts the _active_ work that remains, not wall-clock time. A
-blocked task that is waiting for a reply has released focus, and it costs nothing until it comes back. The estimate
-comes from three sources, listed here in order of trust: first, the measured durations of the procedures its steps run
-(4.3); second, the manual's `cost.time` per operation (8.1), summed over the remaining steps; third, the deliberation's
-own `estimatedMinutes` for a plan (7.5). Estimates are calibrated (7.7): the agent learns its own optimism factor and
+**Every task carries a time estimate, in two parts.** `remainingMinutes` counts the _active_ work that remains. A
+blocked task that is waiting for a reply has released focus, and it costs nothing until it comes back. `waitMinutes`
+counts the time it is expected to spend blocked: a reply, from the recipient's typical response time in their people
+model (6.5); an outcome, from the operation's completion signal (8.1). The two are kept apart because they are used
+apart: active time is what the agent spends, and both together are what the deadline is measured against (7.2). A
+ten-minute task that needs a two-day reply is not comfortably on time with a one-day deadline. The active estimate comes
+from three sources, listed here in order of trust: first, the measured durations of the procedures its steps run (4.3);
+second, the manual's `cost.time` per operation (8.1), summed over the remaining steps; third, the deliberation's own
+`estimatedMinutes` for a plan (7.5). Estimates are calibrated (7.7): the agent learns its own optimism factor and
 applies it before use.
 
 ### 7.2 Priority
@@ -1926,20 +1972,20 @@ described in 3.2.
 **Slack** is what makes urgency a number rather than a bucket:
 
 ```text
-slack(task) = deadline − now − remaining(task)          remaining from the task's estimate (7.1), calibrated
+slack(task) = deadline − now − remaining(task) − wait(task)     both from the task's estimate (7.1), calibrated
 ```
 
-Negative slack means the task is already late. Consider a task with four hours of work and a five-hour deadline: it has
-60 minutes of slack and an urgency of 0.96. Compare it with a task with ten minutes of work and a two-hour deadline: 110
-minutes of slack, urgency 0.92. The first is more urgent than the second. Deadline buckets would put both in the same
-bucket, or get the order backwards.
+Negative slack means the task is already late. Consider a task with four hours of work, no waiting, and a five-hour
+deadline: it has 60 minutes of slack and an urgency of 0.96. Compare it with a task with ten minutes of work and a
+two-hour deadline: 110 minutes of slack, urgency 0.92. The first is more urgent than the second. Deadline buckets would
+put both in the same bucket, or get the order backwards.
 
 **The schedule decision.** The executive makes this decision in two situations: whenever a candidate interrupt passes
 the gate (3.2), and at every checkpoint (a step boundary) over the whole queue. For each candidate, measured against the
 current task, it chooses among three options: **now**, **at the next checkpoint**, or **after**. It picks the cheapest:
 
 ```text
-late(t, start)  = max(0, start + remaining(t) − deadline(t))
+late(t, start)  = max(0, start + remaining(t) + wait(t) − deadline(t))
 cost(option)    = importance(candidate) · late(candidate, when it would start under this option)
                 + importance(current)   · late(current,   when it would resume under this option)
                 + switchCost · reconstruction(option)      ≈ r now, ≈ 0 at a checkpoint, 0 after
@@ -1999,10 +2045,25 @@ type Deliberation = {
     understanding: string // what is going on, citing ids
     options: { action: Step; expected: string; risk: 'low' | 'medium' | 'high' }[]
     chosen: number // index into options, or -1
-    plan?: Step[] // when the task needs more than one step
+    plan?: Step[] // when the task needs a few steps and nothing depends on anything
+    planProposal?: PlanProposal // when it needs more: nodes with dependencies, preconditions and assumptions (7.10)
     confidence: number // 0 to 1
-    needs: 'none' | 'read' | 'read_history' | 'widen' | 'ask_owner' | 'ask_person' | 'wait' | 'zoom' | 'split'
+    needs:
+        | 'none'
+        | 'read'
+        | 'read_history'
+        | 'widen'
+        | 'ask_owner'
+        | 'ask_person'
+        | 'wait'
+        | 'zoom'
+        | 'split'
+        | 'recall'
+        | 'simulate'
+        | 'search'
+    request?: Request // when needs is recall, simulate or search: what exactly (7.10)
     estimatedMinutes: number // active work for the plan, or for the chosen action alone; calibrated in 7.7
+    waitMinutes?: number // expected blocked time in the plan: replies, completion signals (7.1)
     question?: string // when needs is a question
     zoom?: { question: string; place: PlaceRef; done: CompletionPredicate; expected: string }
     split?: { title: string; done: CompletionPredicate; dependsOn: number[]; deadline?: Date }[]
@@ -2028,15 +2089,25 @@ needs its parent's context to make sense:
 These are the rules around the call:
 
 - **Model tier** comes from the identity. Care mode, or `thoroughness` above 0.7, raises it one tier.
-- **Budget.** A task gets a deliberation budget (default 6 calls), which is shared out to its zooms and splits. Once the
-  budget is used up, the task blocks and asks the owner. A task that cannot be finished in six thoughts is either too
-  big (split it, which shares the six, it does not multiply them) or not the agent's to finish.
-- **Time budget.** Each call also gets a time budget, set before it starts:
-  `min(slack of the task (7.2), the identity's ceiling for this prompt kind, what the wallet allows (6.1))`. The budget
-  maps to the call's settings: tier, reasoning effort, maximum tokens. Care mode raises the ceiling; a task that is
-  already late lowers it and drops a tier. Decision models call this a collapsing bound: as time runs out, the threshold
-  for accepting an answer lowers, and you go with less evidence. How long the agent may think is decided by urgency,
-  never by a constant. What happens to a call in flight is in 8.5.
+- **Budget.** A task gets one budget (7.1): deliberations, money and active time. It is shared out to its zooms and
+  splits, and never reset; a split shares it, it does not multiply it. Requests (7.10) are code, so they cost money and
+  time, not deliberations, and they are never free. Once any part of the budget is used up, the task blocks and asks the
+  owner, with the plan so far in the question. Six deliberations is the default, and it is a measured default (11.5):
+  the harness says what tasks need, the number does not say what tasks the agent may have.
+- **Time budget.** Each call, and each optional request (7.10), gets a time budget, set before it starts:
+  `min(positive slack of the task (7.2), the identity's ceiling for this prompt kind, the task's remaining active budget after the execution reserve, what the wallet allows (6.1) after that reserve)`.
+  The **execution reserve** is the estimated time and money to execute and verify the task's remaining steps. It is
+  already inside `remaining` (7.1), so slack reserves it once; the reserve is subtracted only from the task's own budget
+  and from the wallet, so that thinking never eats what the actions need. All reserves come from estimates that exist
+  before the call starts. A task with no deadline has no slack cap. A task whose slack is zero or negative skips
+  optional thinking; a deliberation or required request it cannot do without runs at the shortest supported settings
+  within the remaining budget, and the trace records the expected lateness. The budget maps to the call's settings:
+  tier, reasoning effort, maximum tokens. Care mode raises the ceiling; a task that is already late lowers it and drops
+  a tier. Decision models call this a collapsing bound: as time runs out, the threshold for accepting an answer lowers,
+  and you go with less evidence. How long the agent may think is decided by urgency, never by a constant. Urgency
+  shortens thinking; it never lowers a permission, skips an evidence check, or turns an unresolved precondition into a
+  satisfied one. A required check on a plan node is the one exception to the cap: it spends from the execution reserve
+  under 7.10 and positive slack does not bound it. What happens to a call in flight is in 8.5.
 - **Certainty of what it cites.** Items in working memory carry a certainty. Facts a view gave (a sender, an attachment,
   a keyword in a subject line) are _certain_, since the tool reports what is true now (12.7). Facts from interpretation
   (an intent, an ask) are _hypotheses_ until a focused read confirms them (2.3 §4). An action may depend on
@@ -2046,19 +2117,27 @@ These are the rules around the call:
   evidence is lost (5.2 §5); and a prior claim (4.12) is certain only where its verification rule allows. So forwarding
   an invoice is fine when the procedure's trigger is structural (sender, attachment, keyword) and screening has passed
   it (2.3 §5). Composing a summary of what the invoice asks, based on an interpretation, is not fine, and the draft
-  check (8.3) enforces that for text.
+  check (8.3) enforces that for text. This rule is about **preconditions and authority**: what must be true for the
+  action to be allowed at all. A **predicted consequence** (7.6, 7.10) is a hypothesis by definition and never satisfies
+  it. A prediction may inform the choice between allowed actions; it may never stand in for an observed precondition,
+  and it may never be stated as a fact in anything the agent sends.
 - **A plan is a proposal.** `plan` becomes the task's steps. Later steps are executed by procedures if one matches, and
-  otherwise by short deliberations bounded to that step. The plan can be revised at any mismatch.
+  otherwise by short deliberations bounded to that step. The plan can be revised at any mismatch. When the task needs
+  more than a few steps, or steps that depend on each other, the plan is kept as a durable `Plan` (7.10) that later
+  deliberations revise rather than rewrite.
 - **Every deliberation is bound to what it saw.** Its `basis` names the task revision, every input it was given, the
   policy versions and the leases. Before any action from it runs, the runner validates the basis (8.1). If a correction
   arrived while the model was thinking, the result is a `Conflict`, not an action.
 - **`needs` is honoured before `chosen`.** If the model says it needs a read, the next action is a focused read (2.4),
   not the chosen action. If it says ask (`ask_owner` or `ask_person`), the task blocks on an expectation for the answer.
+  If it says recall, simulate or search, the request runs as a step (7.10) and the next deliberation sees the result.
 - **Citations are checked.** Every id in `cites` must exist in the rendering. Claims about the world that cite nothing
   are treated as unknowns (Chapter 10).
 
-Deliberation is the only place where the LLM decides anything, and its output is stored whole in the episode. That is
-what the brainstorm's exit criteria meant by "explain each move": the explanation was written at the time of the move.
+Deliberation is where the LLM decides, and its output is stored whole in the episode. That is what the brainstorm's exit
+criteria meant by "explain each move": the explanation was written at the time of the move. Code decides too, under a
+declared objective: a procedure picks its next step, a scan path picks the next move (12.6), and a search picks the best
+legal option (7.10). What code decides is read off its inputs; what the model decides is read off its answer.
 
 ### 7.6 Forward model
 
@@ -2077,8 +2156,14 @@ type Expectation = {
     onMissed: 'nudge' | 'escalate' | 'drop' | 'triage'
     source: EpisodeRef // the action or percept that created it
     obligation?: { status: 'candidate' | 'accepted' | 'rejected'; under?: InstructionRef | GoalRef; reason?: string }
+    predictedBy?: { simulator: string; version: string; run: string; horizon: number } // when a simulation supplied the prediction (7.10)
 }
 ```
+
+An expected outcome can also come from a simulator (7.10), and then the expectation records which one, which version,
+which run and how far ahead it looked. Only the action that was **executed** gets an expectation. The branches a search
+looked at and did not take create no deadline, no nudge and no episode of their own; they stay in the search run's
+record. A prediction the agent made and never acted on is not something the world can confirm.
 
 **Obligations.** An ask with a deadline found by screening (2.3 §5) creates an expectation "handled by deadline minus
 margin" with `obligation.status = 'candidate'`, whether the ask was attended or not. A candidate becomes **accepted**
@@ -2138,6 +2223,12 @@ model call. From that the agent learns its own **optimism factor** per estimate 
 schedule decision. People never manage this; it is the planning fallacy corrected by bookkeeping. The factor is shown on
 the learning page (9.9), so the owner can see whether it is converging.
 
+Simulators are calibrated the same way, and only from executed actions. For each simulator version, per domain and per
+horizon, the predicted outcome of every executed action is scored against what was later observed, and that score is the
+simulator's reliability (7.10). Branches that were not taken are never scored, because nothing observed them. This
+matters because a deeper search tends to pick the branch where an approximate simulator is most wrong; the score shows
+whether a simulator's predictions survive being chosen.
+
 ### 7.8 Ending
 
 A task is `done` when its expected outcome is observed, not when the model says it is done. It is `dropped` when the
@@ -2169,6 +2260,267 @@ that night   compile sees this shape once; not yet a procedure change. After two
              appropriate level clears 0.9: Kam's acknowledgements are what earn it.
 ```
 
+### 7.10 Thinking ahead: directed recall, simulation, search and plans
+
+A rat at a fork in a maze pauses, and its hippocampus plays the left arm and then the right arm before the rat moves
+(Johnson and Redish, 2007). Before a run to a known goal, the same cells play the path there (Pfeiffer and Foster,
+2013). People who choose by consequences show the future paths in their brain at the moment of choice (Doll et al.,
+2015). Planning a trip or a conversation engages the frontoparietal control network, not only the default mode (Spreng
+et al., 2010); and looking for a memory on purpose, rather than being reminded, is a prefrontal job of its own (Wagner
+et al., 2001). These findings support four things: a decision can be tested before it is taken; the testing is a process
+with steps, not one thought; it is not confined to idle time; and memory can be searched as well as triggered. They do
+not supply an algorithm, a tree depth or a stopping rule. Those come from the harness (11.1).
+
+The document already had pieces of this. Deliberation (7.5) writes a plan and later deliberations revise it; frames keep
+scratch across ticks (3.6); the forward model (7.6) predicts one action's consequences; dreams (5.2 §7) rehearse
+tomorrow through the fast path; experiments (9.6) and the sandbox (8.4) try operations out; `read_history` and time
+lookups (4.8, 13.4) are directed reads; and the debugger's what-if (10.1) re-runs a tick offline. What it did not have
+was a bounded way for a task to **build and test a decision across ticks**: to search memory on purpose, to roll a
+candidate forward with code, to compare alternatives, and to keep the plan as a thing that survives the next tick. This
+section adds that. It adds no prompt, no brain region and no new path through the tick. It adds three **requests** a
+deliberation can make, one **plan** record, one **simulator** contract, and the rules that keep what is imagined apart
+from what is real.
+
+**Three requests.** A deliberation returns `needs: 'recall' | 'simulate' | 'search'` and says exactly what it wants:
+
+```typescript
+type Request =
+    | { kind: 'recall'; query: RecallQuery } // 4.6
+    | { kind: 'simulate'; candidateIndex: number; simulator: string; horizon: number } // index into the deliberation's options
+    | { kind: 'search'; problem: SearchProblem; resume?: SearchRunRef }
+
+type SearchProblem = {
+    simulator: string // supplies legal options and next states (below)
+    evaluator: string // scores a state against the goal and the constraints; declared by the simulator or by the task's done predicate
+    from: SnapshotRef
+    goal: CompletionPredicate
+    constraints: Predicate[]
+    proposals?: string[] // open-ended options the model wants tried, for domains where code cannot enumerate them
+    limits: { nodes: number; wallMs: number; money: Money } // within the task's budget (7.1)
+}
+```
+
+A request runs as a step, the way a model call does (8.5): it has an estimate, it runs beside the tick, it can be
+cancelled, and the deliberation that follows sees its result in working memory. Recall is served by 4.6. Simulate and
+search are served by a simulator. The model frames the question and reads the answer; it does not run the lines in its
+head when there is code that can run them. Where there is no such code, for example "will Acme agree to Thursday", the
+model's own `expected` is the prediction, labelled as such (7.6), and the people model (6.5) is what it should cite.
+
+**Simulators.** A simulator is part of a tool's manual (8.1), and it has up to three parts. The **simulator** takes a
+state and an action and gives the possible next states. The **evaluator** scores a state against a goal and constraints.
+The **search** chooses which states and actions to look at next. A chess engine has all three. A calendar checker has
+only the first: it can say whether a proposed schedule conflicts, and nothing more. A cost rollout has the first two: it
+can say what a plan spends and whether that is inside the wallet. Nothing requires every domain to supply a world model,
+and nothing requires one universal search algorithm: chess uses its own, a route uses its own, and the contract only
+says what goes in and what comes out.
+
+```typescript
+type SimulatorSpec = {
+    id: string // "chess:engine", "calendar:conflicts", "wallet:rollout"
+    version: string
+    parts: ('simulate' | 'evaluate' | 'search')[]
+    stateSchema: JsonSchema
+    actionSchema: JsonSchema
+    resultSchema: JsonSchema
+    fidelity: 'exact_under_rules' | 'approximate' // chess is exact under its rules; a route time is approximate
+    applicability: Predicate[] // when the simulator can be used at all, over the task and the snapshot
+    execution: 'isolated_local' | 'external_service' // an external one is an outward operation with a cost and a disclosure check
+}
+
+type SimulationRun = {
+    id: string
+    simulator: { id: string; version: string }
+    basis: SnapshotRef // immutable, versioned inputs: the state as of one moment
+    assumptions: string[] // what the run took as given and could not check
+    actions: unknown[] // data, in the simulator's action schema; never a runner intent
+    horizon: number
+    seed?: number
+    limits: { nodes: number; wallMs: number; money: Money }
+    status: 'complete' | 'truncated' | 'unsupported' | 'failed'
+    results: {
+        branch: string
+        states: unknown[] // predicted, in the state schema
+        kind: 'exact' | 'sampled' | 'heuristic' // a chess score is a heuristic, not a calibrated win probability
+        score?: number
+        constraintsViolated: string[]
+        duration?: Duration
+        money?: Money
+    }[]
+    explored: number
+    unknowns: string[] // what the simulator could not model
+}
+```
+
+A simulator keeps seven rules, and the runner and the harness enforce them:
+
+1. **It runs on a snapshot.** The run names the versions of everything it read, and it reads nothing live while it runs.
+   With the seed, a run can be repeated.
+2. **It runs isolated.** A local simulator gets no live operation handles and no credentials. It cannot send the
+   simulated message, book the simulated room or take a real lease. An external simulation service is an `outward`
+   operation like any other: its arguments pass the disclosure rule, and it spends from the wallet.
+3. **`read` is not "pure".** A read can depend on time, on remote state and on chance. The manual's flags prove nothing
+   about isolation; the conformance suite (8.8) tests it, the way it tests a manual that lies.
+4. **Its results are hypothetical, by type.** Every stored result carries where it came from:
+
+    ```typescript
+    type ResultDomain =
+        | { kind: 'live' }
+        | { kind: 'sandbox'; instance: string } // an experiment on a fake instance (9.6)
+        | { kind: 'hypothetical'; run: string; branch: string } // a simulation (this section)
+    ```
+
+    This is separate from the label (8.1). A clean, authorised, hypothetical result is still hypothetical.
+
+5. **Nothing hypothetical enters the live evidence.** A simulated result cannot satisfy an obligation, settle a
+   `ChangeEvent` (13.9), raise a procedure's live reliability (4.3), or change what a person `knows` (6.5). Ten rollouts
+   are not ten confirmations. Sleep (Chapter 5) extracts no facts from hypothetical results, and compaction keeps the
+   domain on what it keeps.
+6. **Running it is real; what it imagined is not.** The run is a step, so monitoring checks that it ran, kept its limits
+   and returned a valid result. The trace may say "Nia simulated forwarding the invoice". It never says "Nia forwarded
+   the invoice".
+7. **Only execution arms an expectation.** The branch that was chosen supplies `expected` when the real action is
+   dispatched, and the expectation records the run (7.6). Branches not taken create nothing.
+
+**Search.** A search run is a record, not a thought, so it survives the tick and can be resumed:
+
+```typescript
+type SearchRun = {
+    id: string
+    problem: SearchProblem
+    status: 'running' | 'stopped'
+    stopReason?: 'exhausted' | 'good_enough' | 'no_improvement' | 'stale' | 'cancelled' | 'budget' // why it stopped
+    frontier: StateRef[] // what is left to look at
+    evaluated: { branch: string; score: number; kind: 'exact' | 'sampled' | 'heuristic'; violated: string[] }[]
+    rejected: { branch: string; reason: string }[]
+    best?: { branch: string; complete: boolean } // complete: the frontier was exhausted; otherwise the best so far
+    explored: number
+    spent: { wallMs: number; money: Money }
+}
+```
+
+Code enumerates the legal options where the domain allows it; in chess the model does not have to name the moves. The
+model proposes options where only language can (three ways to phrase the ask to Acme), and it reads the result where
+only language can judge it. States are the same only when their relevant state, their assumptions and the simulator
+version match. A search stops when the frontier is empty, when the evaluator says the best found is good enough under
+the goal's own criteria, when the last `n` expansions did not change the best, when its inputs went stale (the basis
+check of 8.1, applied to the snapshot), when it is cancelled, or when its limits are spent. Its result always says which
+of these it was, and whether `best` is complete or only the best so far. The durable alternatives live in the run; the
+executive still recomputes the next action every tick (7.3), and it does not throw the run away to do so.
+
+**Plans.** A task that needs more than a few steps keeps its plan as a record on the task, with a revision:
+
+```typescript
+type Plan = {
+    id: string
+    revision: number
+    task: TaskRef
+    status: 'draft' | 'ready' | 'executing' | 'stale' | 'done' | 'abandoned'
+    goal: CompletionPredicate
+    constraints: Predicate[]
+    basis: SnapshotRef
+    nodes: {
+        id: string
+        step: Step
+        dependsOn: string[]
+        preconditions: Predicate[] // observed facts that must hold before this node runs
+        done: CompletionPredicate
+        estimate: { activeMinutes: number; waitMinutes: number; money: Money }
+        status: 'pending' | 'ready' | 'running' | 'done' | 'failed' | 'stale' // owned by code, never by the model
+        outcome?: RunRef // the operation run, with its four levels (7.7), once the node has run
+    }[]
+    assumptions: string[] // what the plan takes as given; each is a thought (2.1) until checked
+    openQuestions: string[]
+    alternatives: { nodes?: string[]; run?: SearchRunRef; branch?: string; reason: string }[] // what else was considered, by reference, and why it lost
+    checks: { check: string; node?: string; required: boolean; passed: boolean; detail?: string }[] // run by code at each revision; node: which node it gates
+}
+
+type PlanProposal = {
+    revises?: { plan: string; revision: number } // absent for a new plan
+    nodes: Omit<Plan['nodes'][number], 'status' | 'outcome'>[] // the whole list, or for a revision the nodes that change, by id; status and outcome are code's
+    removed?: string[] // node ids a revision drops
+    assumptions: string[]
+    openQuestions: string[]
+    alternatives: Plan['alternatives']
+}
+```
+
+The lifecycle is this. A deliberation proposes a plan, or revises one, as a `PlanProposal` in its output (7.5): typed
+fields, never prose that code would have to read. Code stores it, assigns the revision and the basis, and checks it:
+every step is in the executable language (4.3), every binding resolves or is marked unknown, there is no dependency
+cycle, and the declared constraints hold on the snapshot. Checks are of two kinds, and the plan says which. A
+**required** check is one that code can decide and the node cannot run without: a constraint on the snapshot, a
+precondition, a feasibility question a simulator with the `simulate` part can answer (does Thursday conflict). Required
+checks are subject to budget and permission, never to the usefulness gate below; a required check that cannot run leaves
+its node unready. An **optional** check compares alternatives: a rollout, a search for something better. It runs only
+when the simulator parts it needs exist and the admission rule allows it, and a refused optional check never holds a
+node back once the required ones pass. What the plan lacks becomes a request (a recall, a read) or a question. Where
+there is no simulator, alternatives are weighed by one bounded deliberation. The plan is `ready` when its required
+checks pass and its open assumptions are acceptable for the **next** node, not for the whole plan. `ready` means usable
+as a plan: it grants no permission, it completes nothing, and it asks the owner exactly where policy already says to
+ask. The runner executes the next eligible node only, with the permissions, the evidence and the preconditions of that
+moment (8.1). After it runs, the agent observes, and only then considers the node after. A mismatch (7.7), a relevant
+change (13.9) or a stale basis marks the affected nodes and the plan `stale`, and the next deliberation revises those
+nodes. Leases are taken when a node runs, never while a plan imagines a resource free. Executing a short prefix and
+looking is the rule; committing to a long rollout is not.
+
+A planning zoom (3.6) is the usual frame for this, with the question "how do I do X" and `done` = "a ready plan". Its
+`scope` lists the places and entities the plan touches, because planning an office move crosses mail, calendar and
+documents, and no one place holds it. Later deliberations see the current plan as a bounded rendering in the focus
+frame: its nodes and their state, its open questions and assumptions, and the alternatives by reference. The plan's id
+and revision go into the deliberation's basis (8.1), so a proposal against a plan that has moved on is a `Conflict` like
+any other stale input. "Thinking out loud" means the plan's questions, alternatives, assumptions and checks, written
+down where the next tick can pick them up. It does not mean a growing transcript of reasoning; the structured record is
+what makes resuming reliable, and it is what the owner sees when they ask what the agent is up to.
+
+**When to think ahead.** The model asks; code admits. Code first classifies the request. A **required** request is a
+required check on a plan node (above), and its cost is already inside the execution reserve (7.5): it spends from that
+reserve, it is not reserved twice, and positive slack does not cap it. Before it runs, code moves its reserved time and
+money into its running allowance and leaves the rest reserved. It still obeys the task budget, the wallet and the
+permissions; if it cannot fit, its node stays unready and the task asks the owner. Expected lateness is recorded, and it
+never waives a check. Everything else is **optional** thinking, and an optional request is admitted when all of these
+hold:
+
+- the task's budget (7.1) covers the request's estimate with the execution reserve (7.5) left intact, and the estimate
+  fits in positive slack;
+- for simulate and search, a simulator exists whose `applicability` holds on the snapshot; for recall, always;
+- for simulate and search, a plain `read` could not answer the question more cheaply, and the question is not a factual
+  conflict (3.7): a simulator settles no conflict, a read does. Directed recall may run before a read and while a
+  conflict is pending, since evidence is what a conflict needs; what it brings back still passes reconciliation (3.7)
+  and the certainty rule (7.5);
+- the request kind has **measured usefulness** for this task kind: the share of past requests after which the chosen
+  option changed, a constraint violation was found, or the plan was revised. The usefulness is learned per task kind and
+  request kind, with a small floor so that it keeps being measured, and a request is admitted while it is above the
+  identity's threshold.
+
+Priority closeness (7.7) is not a trigger: priority says how important a task is, not how unsure the agent is about what
+an action will do. The usefulness rule is the cheap proxy for "could more thinking change the decision enough to pay for
+itself", and the harness measures it against always-search, never-search and a fixed allowance (11.1).
+
+**Invariants.** These hold across interruption, restart and sleep, and the harness tests each one:
+
+- An imagined send never sends.
+- A simulated success never raises live reliability.
+- A hypothetical reply never satisfies a live expectation.
+- A stale simulation result cannot authorise execution: the basis check applies to its snapshot.
+- A search cannot reset its budget by opening another frame.
+- The agent's simulator cannot read the harness's hidden script, and the harness's world is not the agent's simulator.
+
+**Order of work** (11.2). Directed recall first: it is the smallest change and the one every plan needs. Durable plans
+second. Then one isolated simulator with exact fidelity, the calendar conflict checker or the cost rollout, because
+exact constraints are easy to validate and a simulator of people is not. Search is admitted only where its rung on the
+ablation ladder shows a gain. Chess tests the mechanics (legal moves, exact transitions, an evaluator labelled
+heuristic, a search that stops); Nia's office tests whether any of it matters.
+
+**Nia moves a meeting.** Kam writes: "can the Acme review move to Thursday?" The deliberation asks for recall:
+precedents of rescheduling with Acme, failures included. Two come back: one went smoothly, one in May ended with Acme's
+finance lead missing the meeting because the invite went out before she confirmed. The next deliberation asks the
+calendar simulator for Thursday against three attendees' free slots on a snapshot of the calendar view; two slots
+conflict, one is clear at 15:00. It writes a plan: ask Acme's lead for 15:00 (an `outward` ask, with the May episode as
+the reason to ask before moving anything), hold the slot privately, move the invite when she confirms. The plan is
+`ready` for its first node only. The ask goes out, the task blocks on the reply, and nothing has moved yet. The trace
+shows the query, the run with its snapshot version, and the plan's revision; the hypothetical "15:00 is free" is marked
+as such, and the expectation on the ask records nothing from the simulator, because the ask was not what it predicted.
+
 ---
 
 ## 8. Tools and the LLM
@@ -2186,10 +2538,11 @@ typed, and its type says what it costs and what it risks.
 Every tool ships with a **manual**, which is a versioned, machine-readable contract. The manual declares the tool's
 state schema and the addressable spaces in it (2.5), and the notifications the tool emits. For each operation it
 declares the parameters, the declared effects, the action class, the cost, the reversibility, the completion signal
-(that is, when the outcome can be known, 7.6) and examples. The agent reads the manual before it tries anything, the way
-a person reads the label. What an operation actually does in context is learned by doing (9.6), and the manual bounds
-what may be tried. A manual that lies, for example an operation marked `read` that has side effects, is a bug in the
-tool, and the harness tests for it (11.1).
+(that is, when the outcome can be known, 7.6) and examples. Where the tool can answer "what would happen if" with code,
+the manual also declares a **simulator** (7.10), with its own schemas, fidelity and isolation. The agent reads the
+manual before it tries anything, the way a person reads the label. What an operation actually does in context is learned
+by doing (9.6), and the manual bounds what may be tried. A manual that lies, for example an operation marked `read` that
+has side effects, or a simulator that touches live state, is a bug in the tool, and the harness tests for it (11.1).
 
 ```typescript
 type Operation = {
@@ -2238,6 +2591,7 @@ these:
     ```typescript
     type Basis = {
         task: { id: string; revision: number; ancestors: { id: string; revision: number }[] }
+        plan?: { id: string; revision: number } // the plan the call saw, when the task has one (7.10)
         inputs: { id: string; version: number }[] // every item the call was given: rendered, scratch, primed
         scope: { places: PlaceRef[]; entities: EntityRef[]; asOf: Date } // what "new relevant evidence" is measured against
         policy: { identityVersion: number; matrixVersion: number; grantsVersion: number }
@@ -2413,9 +2767,11 @@ output, and the working-memory rendering is the only variable part:
 | chunk a history           | cheap      | `chunk`      | one line                                                                                |
 | narrate the trace (10.1)  | cheap      | `explain`    | prose citing tick ids                                                                   |
 
-Nine prompts, each versioned, with the version stored in every trace. Nothing else calls the model. Salience, recall,
-priority, procedures, memory writes and the trace are all code. On a quiet day Nia makes a few dozen calls, most of them
-on the cheapest tier, and the debugger can show every one of them next to the working memory it saw.
+Nine prompts, each versioned, with the version stored in every trace. Nothing else calls the model. The principle is
+fixed, typed, versioned prompts; nine is where that leaves us today, not a rule. Requests for recall, simulation and
+search (7.10) come back on the `deliberate` prompt and are served by code. Salience, recall, priority, procedures,
+memory writes and the trace are all code. On a quiet day Nia makes a few dozen calls, most of them on the cheapest tier,
+and the debugger can show every one of them next to the working memory it saw.
 
 **A call is a step with a duration.** It gets what any step gets: an estimate before it runs, monitoring while it runs,
 and calibration after it (7.7).
@@ -2740,9 +3096,10 @@ Idle mode (6.4 §3) spends a small budget on the top unresolved item. What it re
 source, at stranger confidence. Curiosity is the only kind of learning that is not triggered by an event, and the budget
 is what keeps it from becoming browsing.
 
-Exploration is curiosity pointed at a tool's operations. The agent learns what they do by doing them, the way an infant
-learns its arms by waving them; this is the brainstorm's causality learning. Discovering an effect by doing is useful.
-Discovering a _risk_ by doing is not acceptable, so exploration is an **experiment**, not a poke:
+Exploration is curiosity pointed at a tool's operations. (Searching a space of options or of memories is a different
+thing, and it is called search and directed recall, 7.10.) The agent learns what they do by doing them, the way an
+infant learns its arms by waving them; this is the brainstorm's causality learning. Discovering an effect by doing is
+useful. Discovering a _risk_ by doing is not acceptable, so exploration is an **experiment**, not a poke:
 
 - An experiment is a low-priority task (7.1). It has a hypothesis ("`archive` removes the message from the inbox
   space"), a baseline snapshot of the tool's state, an expected change, an observation deadline, and a cleanup plan
@@ -2765,8 +3122,10 @@ accepted; the change itself is what the glance after the call shows. Sandbox fin
 count as live successes (11.4 §6).
 
 These facts are what the forward model (7.6) draws its expected outcomes from, and repeated verified sequences can
-compile into guarded procedures (4.3). Nothing learned this way earns a permission. Exploration teaches what an
-operation does; the matrix still says whether the agent may do it.
+compile into guarded procedures (4.3). They are not a simulator (7.10): a few confounded observations can support a
+warning or an estimate, and they cannot roll a plan forward. A simulator is declared by the tool, with its fidelity.
+Nothing learned this way earns a permission. Exploration teaches what an operation does; the matrix still says whether
+the agent may do it.
 
 Incubation (4.10) is the third form of curiosity. It is neither reading nor doing; it is connecting. What it learns is a
 hypothesis, and a hypothesis becomes a fact only through evidence, like any other. What it _tunes_ is its own threshold,
@@ -2826,6 +3185,7 @@ type Tick = {
     path: 'fast' | 'slow' | 'none' | 'idle' | 'asleep'
     procedure?: { id: string; step: number }
     deliberation?: Deliberation // whole, as returned
+    request?: Request & { admitted: boolean; reason?: string; result?: string; cost: Money } // 7.10
     action?: { op: string; args: unknown; expected: string; permission: string }
     outcome?: { matched: boolean; summary: string }
     drives: DriveSnapshot
@@ -2857,7 +3217,10 @@ The UI, on the agent's page, has these parts:
 - **Memory browser.** It shows entities with their facts and distributions, with the sources one click away; procedures
   with their stats and origin; open expectations; and the frame stack, live.
 - **What-if.** Re-run a tick's deliberation offline with an edited working memory, to see whether a different fact or a
-  different weight would have changed the decision. Nothing is written.
+  different weight would have changed the decision. Nothing is written. This is the debugger's tool, for the owner; the
+  agent's own thinking ahead is 7.10, and its runs show here as rows with their snapshot, their result and their cost.
+- **Plans.** The task's plan (7.10) with its revision, its nodes and their state, its open questions and the
+  alternatives it rejected, so that "what are you doing about the Acme review" is answered from the record.
 - **Learning.** The plots from 9.9.
 
 ### 10.2 Safety
@@ -2874,7 +3237,7 @@ Most of it is already in place by construction. This is the list.
 | A former holder's delayed write           | resource epochs where the tool fences; conflicting writes blocked while an intent is unresolved where it cannot (8.9)                                                                                                    |
 | Disclosing one space's content to another | disclosure rule in the runner, on the arguments' labels, access re-read at send time (8.1)                                                                                                                               |
 | Acting beyond what the owner allowed      | action classes and the matrix (8.2); "never" cells; procedures cannot gain rights (9.8)                                                                                                                                  |
-| Runaway spending                          | budget drive with soft and hard stops (6.1); per-task deliberation budget (7.5); idle budget (6.4)                                                                                                                       |
+| Runaway spending                          | budget drive with soft and hard stops (6.1); per-task budget (7.1); idle budget (6.4)                                                                                                                                    |
 | Self-modification                         | identity is owner-only and versioned (6.6, 9.8)                                                                                                                                                                          |
 | Silent failure                            | numb senses (2.1); model outage report (8.7); scheduler auto-disable surfaces in the brief                                                                                                                               |
 | Memory poisoning by strangers             | confidence cap (9.2); candidates need promotion (4.2)                                                                                                                                                                    |
@@ -2936,8 +3299,10 @@ only way to develop the agent without spending money on every run, and without w
 - **Expected actions.** Each script states what a good agent does and what it does not do: which percepts should be
   attended, which mails should be forwarded, which should be asked about, and which must never go out.
 - **Tool failures.** Scripts in which a tool drops a notification, serves stale state, revokes access in the middle of a
-  task, or ships a manual that lies (a `read` that has a side effect); an experiment that would exceed its caps; a robot
-  that loses contact. The simulated tools also serve as the sandbox that the store offers for tools (8.4).
+  task, or ships a manual that lies (a `read` that has a side effect, a simulator that reads live state or holds a live
+  handle); an experiment that would exceed its caps; a robot that loses contact. The simulated tools also serve as the
+  sandbox that the store offers for tools (8.4). The harness's world and the agent's simulators (7.10) are separate
+  programs: a planner tested against the very model it searches would hide the main way it fails.
 
 **A fixed offered workload, fully accounted.** Every scripted week offers a fixed set of tasks and obligations. That set
 includes requests with no explicit deadline; these get a default due time by kind. The report accounts for every one of
@@ -2972,12 +3337,31 @@ action), ambiguous evidence, exceptions in familiar wording, a correction that a
 whose response is lost.
 
 **The ablation ladder.** B0 is the baseline. It has durable tasks, retrieval over the same stores, a capable model and
-the enforced runner, and it runs on the runtime of M1. Each mechanism (procedures, learned attention, forgetting,
-consolidation, drives, patterns, dreams) is added one at a time. To enter the default identity, a mechanism must improve
-completion and timeliness at equal or lower cost on the validation weeks. The chosen configuration is then run on the
-held-out weeks; that result is reported, and it is never used to choose again. A mechanism that does not earn its place
-stays an experiment. The ablation ladder is where the third column of 1.1 is tested, and record and replay is for
-regression only.
+the enforced runner, and it runs on the runtime of M1. B0 also gets the same simulators and the same directed recall
+(7.10), so that a rung tests the architecture and not access to better operations. Parity of capability and the ablation
+of a mechanism are two different comparisons, and each rung says which one it reports: B0 with the calendar simulator
+against Abe with it is parity; Abe with directed recall against Abe with it switched off is the ablation. Each mechanism
+(procedures, learned attention, forgetting, consolidation, drives, patterns, dreams, and each piece of thinking ahead)
+is added one at a time. To enter the default identity, a mechanism must improve completion and timeliness at equal or
+lower cost on the validation weeks. The chosen configuration is then run on the held-out weeks; that result is reported,
+and it is never used to choose again. A mechanism that does not earn its place stays an experiment. The ablation ladder
+is where the third column of 1.1 is tested, and record and replay is for regression only.
+
+**Thinking ahead has four rungs** (7.10), each with its own experiment and its own way to fail:
+
+| Rung            | Experiment                                                                                                                                                                                                           | Rejected or restricted when                                                                                                        |
+| :-------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------- |
+| Directed recall | Plant one rare correction among many routine successes; include compacted evidence, ambiguous dates, revoked access and a record that does not exist. Compare automatic recall with directed queries at equal budget | It returns more material without better decisions, keeps missing the decisive episode, or raises unsupported claims                |
+| Durable plans   | Compare one-shot plans, step-by-step revision as 7.5 already does it, and the plan record. Include interruptions, cancellations, moved deadlines and supplier waits                                                  | It mostly adds planning delay, repeated reconstruction, or execution of stale plans, with no gain in completion                    |
+| Simulation      | Compare no rollout, one-step prediction and bounded rollout. Include delayed traps, stale snapshots, a wrong simulator and unsupported conditions. Run it on chess and on an office week                             | No gain in correct, timely completion at equal or lower total cost; or the gain disappears once the simulator is wrong by a little |
+| Search          | Compare direct choice with bounded search over the same evaluator. Include duplicate branches, a promising wrong branch and deadlines too short for depth                                                            | Search spends slack without better decisions, or picks the branch that exploits the evaluator's mistakes                           |
+
+The admission rule itself (7.10) is compared with always-search, never-search and a fixed allowance per task kind; if
+the learned rule is no better than the fixed allowance after its overhead, the allowance stays. The invariants listed in
+7.10 are tested on every rung, across interruption, restart and sleep, and a single failure of any of them is a
+forbidden action. One regression case guards the budget arithmetic: a task with zero or negative slack and exactly the
+execution reserve left. The required check must run, its allowance must be counted once, and an optional search must be
+refused. The same case with too little budget must leave the node unready and ask the owner.
 
 ### 11.2 Milestones
 
@@ -3030,8 +3414,10 @@ actions.
 default identity only on validation weeks: sleep's extract, prospect, compact and prune, with the brief and waking; the
 full pattern store and spot checks; interrupts and the frame stack; the learned change model for glances (2.9); the
 regulator, boredom and idle mode, the budget stops, curiosity, social, people models with proximity, and the why queue's
-answers; control leases with two agents; dreams; the what-if view and the learning page. Exit for each: a gain in
-completion and timeliness at equal or lower cost on validation, reported once on held-out, or it stays an experiment.
+answers; control leases with two agents; dreams; the what-if view and the learning page; and the four rungs of thinking
+ahead (7.10) in their order: directed recall, durable plans, one exact simulator (the calendar conflict checker or the
+cost rollout), then search. Exit for each: a gain in completion and timeliness at equal or lower cost on validation,
+reported once on held-out, or it stays an experiment.
 
 **The decisive test (M3 exit).** One scripted week that contains an ordinary invoice, a changed bank account in familiar
 wording, a duplicate, an exception buried in paragraph four, a correction that arrives during deliberation, and a send
@@ -3110,6 +3496,10 @@ arithmetic (4.5, 5.4), the reward scales (9.4), the runner's duties (8.1), and f
   too loose or too strict per class.
 - **`ChangeEvent` without a threshold** (13.9): whether explicit resolution leaves too many pending events waiting on a
   read, and whether the resolution-urgency number orders the reads well.
+- **Six deliberations** (7.1, 7.5): a default, measured per task kind once plans and requests exist. The budget that
+  matters may turn out to be money and time, with the count only a guard against loops.
+- **The usefulness threshold** (7.10): where it starts, how fast it learns, and how large the floor must be to keep
+  measuring a request kind that has stopped being admitted.
 
 ### 11.6 Decisions from the second review: tools
 
@@ -3358,6 +3748,47 @@ accepted every part (`abe_design_solutions.md`). The owner then had the answers 
     as ranges (13.2), and the 300 ms example labelled (12.10).
 13. **Milestones reordered** (11.2): harness, runtime with B0, memory, one authored workflow with the decisive test,
     learned procedures in shadow, then every other mechanism as a measured rung.
+
+### 11.15 Decisions from the tenth round: thinking ahead
+
+The owner asked whether planning, simulation and exploration were missing: in chess, the model should not do all the
+thinking when code can play the lines out; and a complex task should be able to think its plan out loud, searching the
+agent's episodes and knowledge on the way. The assistant, Codex (Astra) and Antigravity (Gemini) worked the answer out
+together (`abe_design_planning_astra.md` holds Astra's first review). Settled:
+
+1. **Three were partly there, and none had a contract** (7.10). Plans were revised step by step, the forward model
+   looked one step ahead, dreams rehearsed stimuli, experiments tried operations, and reads of history and time were
+   directed. What was missing was one bounded way to build and test a decision across ticks. It is added as three
+   requests on the existing `deliberate` prompt, one plan record, one simulator contract and seven rules. No new prompt,
+   no new path through the tick.
+2. **Directed recall** (4.6). The model states what it is looking for; code searches, below the activation threshold,
+   with failures included and coverage reported. "Nothing found" means nothing matched, not that it never happened.
+3. **Simulators are declared by tools and kept apart from the world** (7.10, 8.1). Up to three parts: simulate,
+   evaluate, search. A run works on a snapshot, isolated, and its results are hypothetical by type (`ResultDomain`).
+   Nothing hypothetical satisfies an obligation, settles a change, raises live reliability or updates a people model.
+   Only the executed action's prediction becomes an expectation (7.6), and simulators are calibrated from executed
+   actions only (7.7). A `read` flag does not prove isolation; the conformance suite does.
+4. **Plans are records with a lifecycle** (7.10). Nodes with dependencies, preconditions, estimates and checks;
+   assumptions, open questions and rejected alternatives kept; `ready` for the next node only; a short prefix is
+   executed and observed before the next; `ready` grants no permission.
+5. **Predictions never satisfy preconditions** (7.5). The certainty rule is about authority and observed preconditions.
+   A predicted consequence informs the choice and is never stated as a fact.
+6. **One budget** (7.1, 7.5): deliberations, money and active time, shared and never reset. Requests cost money and
+   time, not deliberations. Thinking time reserves what executing and verifying needs. "More than six thoughts is not
+   the agent's to finish" is gone; six is a measured default.
+7. **Waiting enters slack** (7.1, 7.2). Active work and expected waiting are kept apart and both count against the
+   deadline, which fixes a task that looked on time while waiting two days for a reply.
+8. **The model asks; code admits** (7.10). A required check on a plan node spends from the execution reserve and skips
+   the usefulness gate. An optional request runs when the budget covers it with the reserve intact and inside positive
+   slack, the request kind has measured usefulness for the task kind, and, for simulate and search only, a simulator
+   applies and a plain read could not answer more cheaply and the question is not a factual conflict. Directed recall
+   may run before a read and during a conflict. Priority closeness is not a trigger: it measures importance, not doubt.
+9. **Brain basis, with its limits** (7.10): forward sweeps at choice points, goal-directed replay, prospective
+   representation in model-based choice, planning in the control network, controlled retrieval. These support the
+   mechanisms and supply no algorithm, depth or stopping rule.
+10. **Four rungs, each with its own experiment** (11.1, 11.2), in the order recall, plans, one exact simulator, search.
+    B0 gets the same simulators and recall. The harness world and the agent's simulators are separate programs. Six
+    invariants are forbidden actions when broken.
 
 ---
 
