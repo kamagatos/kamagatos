@@ -63,18 +63,19 @@ The design follows the brain's **organisation**: how it divides responsibilities
 work, and forgets information. Each of these choices addresses a problem the agent also faces. The design does not
 simulate neurons.
 
-| Brain trait                                 | Problem it solves for us                                                | Experiment that would reject it (11.1)                                                                            |
-| :------------------------------------------ | :---------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------- |
-| Continuous sensing with limited attention   | Being always on is cheap; only a few things ever reach the LLM          | Learned attention misses more obligations than screening everything would at the same cost                        |
-| Working memory holds ~4 to 7 chunks         | Prompts stay small, fast, and readable in a debugger                    | For each task kind, a wide rendering finishes with fewer errors and fewer calls than a split or a zoom does (3.4) |
-| Several memory systems, not one             | Facts, events and skills need different storage and different retrieval | A single store with retrieval does as well on the held-out weeks                                                  |
-| Sleep consolidates and forgets              | Memory stays fast and relevant; noise is dropped, not kept              | Forgetting loses items the agent later needed; there is no gain over archiving everything                         |
-| Habits run without thinking                 | Most repeated work costs no LLM call and takes milliseconds             | Compiled procedures do not beat authored procedures plus a model, measured as completion per cost                 |
-| Prediction first, then surprise             | Novelty and errors are detected for free, and they drive learning       | Expectation misses do not predict corrections better than chance                                                  |
-| Drives (hunger, boredom, curiosity)         | The agent acts unprompted, and it knows when to stop spending           | Unprompted actions are not useful more often than they cost                                                       |
-| Emotion tags memories and steers attention  | Important things are remembered and handled with care                   | Arousal-weighted retention does not keep what corrections later needed                                            |
-| Language is one region, not the whole brain | The LLM is one component used by the agent                              | The baseline B0 (a capable model, durable tasks, an enforced runner) matches the full agent                       |
-| Thinking ahead at a choice point (7.10)     | Code tests difficult decisions before execution                         | Directed recall, durable plans and simulators do not improve correct, timely completion at equal or lower cost    |
+| Brain trait                                     | Problem it solves for us                                                | Experiment that would reject it (11.1)                                                                                    |
+| :---------------------------------------------- | :---------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------ |
+| Continuous sensing with limited attention       | Being always on is cheap; only a few things ever reach the LLM          | Learned attention misses more obligations than screening everything would at the same cost                                |
+| Working memory holds ~4 to 7 chunks             | Prompts stay small, fast, and readable in a debugger                    | For each task kind, a wide rendering finishes with fewer errors and fewer calls than a split or a zoom does (3.4)         |
+| Several memory systems, not one                 | Facts, events and skills need different storage and different retrieval | A single store with retrieval does as well on the held-out weeks                                                          |
+| Sleep consolidates and forgets                  | Memory stays fast and relevant; noise is dropped, not kept              | Forgetting loses items the agent later needed; there is no gain over archiving everything                                 |
+| Habits run without thinking                     | Most repeated work costs no LLM call and takes milliseconds             | Compiled procedures do not beat authored procedures plus a model, measured as completion per cost                         |
+| Prediction first, then surprise                 | Novelty and errors are detected for free, and they drive learning       | Expectation misses do not predict corrections better than chance                                                          |
+| Drives (hunger, boredom, curiosity)             | The agent acts unprompted, and it knows when to stop spending           | Unprompted actions are not useful more often than they cost                                                               |
+| Emotion tags memories and steers attention      | Important things are remembered and handled with care                   | Arousal-weighted retention does not keep what corrections later needed                                                    |
+| Language is one region, not the whole brain     | The LLM is one component used by the agent                              | The baseline B0 (a capable model, durable tasks, an enforced runner) matches the full agent                               |
+| Interference, not capacity, limits memory (4.5) | Learning a lot about one thing does not make the rest harder to find    | Recall of the evidence a math week needs falls after a large marketing corpus is learned, against a control branch (11.1) |
+| Thinking ahead at a choice point (7.10)         | Code tests difficult decisions before execution                         | Directed recall, durable plans and simulators do not improve correct, timely completion at equal or lower cost            |
 
 The language-cortex row is the most important. In most "LLM agents" the model is the whole brain: memory is a
 transcript, a decision is the next token, and every step is a call. Here the LLM is the **language and reasoning
@@ -733,9 +734,10 @@ examine together.
 ### 3.5 Eviction and chunking
 
 Every item in working memory has an activation, made of its recency, how many times it has been touched, and its
-relevance to the current task. When a slot is full, the item with the lowest activation leaves. Eviction loses no stored
-information because episodic memory already contains the item. It only removes the item from the agent's immediate
-context. Recall (Chapter 4) can bring it back.
+relevance to the current task. When a slot is full, the item with the lowest activation leaves; in the `recall` slot,
+relevance to the task comes first and familiarity second, as in 4.5. Eviction loses no stored information because
+episodic memory already contains the item. It only removes the item from the agent's immediate context. Recall
+(Chapter 4) can bring it back.
 
 Long task histories are chunked. When `task.history` grows past its budget, a cheap model call collapses the oldest
 steps into one line ("steps 1 to 3: read the thread, found two open questions, drafted answers"), and the detail stays
@@ -1090,11 +1092,14 @@ contract Thursday". They are what the Predict step (1.4 step 3) matches percepts
 message expects a reply), by perception (an ask with a date), and by sleep (open loops). Chapter 7 gives their shape and
 their lifecycle.
 
-### 4.5 Activation: the one number behind recall and forgetting
+### 4.5 Activation and relevance: the two numbers behind recall and forgetting
 
-Every episode, fact and procedure has an activation. It rises when the item is created or recalled, and it decays with
-time. Activation decides what recall returns first, and what sleep forgets. We use the ACT-R base-level form, because it
-has thirty years of fit to human recall curves and it is cheap to compute:
+Every episode, fact and procedure has an **activation**, which says how available it is in general. It rises when the
+item is created or recalled, and it decays with time. Activation decides what sleep forgets and what can be recalled at
+all. A second number, **relevance**, says how much the item has to do with the task in front of the agent, and relevance
+decides which items get the seven places in working memory. The two are kept apart because they answer different
+questions, and because mixing them is how a well-read agent gets worse at what it reads less about. We use the ACT-R
+base-level form, because it has thirty years of fit to human recall curves and it is cheap to compute:
 
 ```text
 B = ln( Σ over accesses j of  t_j^−d )  + 0.5 · arousal  (+ bonus if pinned)
@@ -1105,15 +1110,38 @@ The last five access times are stored on the item. Older accesses are approximat
 age; this is the standard ACT-R shortcut. Recalling something yesterday matters even if the item is a year old, and the
 sum is what captures that.
 
-Then, at recall time, cue overlap adds to it:
+Then, at recall time, the cues in working memory decide **relevance**:
 
 ```text
-A = B + Σ over cues c in working memory of  S(c, item)
+F(c, item) = S(c, item) / (1 + α · ln(max(1, fan(c))))      α = 0.5
+R(item)    = Σ over distinct task cues c of  w(c) · F(c, item)   w = 1 for the focus, 0.5 for ancestors (3.6)
+A(item)    = B + R                                               availability, against the retrieval threshold τ_A
 ```
 
-Here `S` is a fixed strength for each kind of match: same place 1.0, same entity 0.7, parent or child place 0.5, related
-entity one hop away 0.3, same tool instance 0.2, and text similarity scaled to 0 to 0.5. When the cue names a time
-(13.4), an item inside the asked range at its grain gets 0.6, and one in the neighbouring range gets 0.3.
+`S` is a fixed strength for each kind of match: same place 1.0, same entity 0.7, parent or child place 0.5, related
+entity one hop away 0.3 scaled by the relation's strength (4.6), same tool instance 0.2, and text similarity scaled to 0
+to 0.5. When the cue names a time (13.4), an item inside the asked range at its grain gets 0.6, and one in the
+neighbouring range gets 0.3.
+
+**Task cues** are the focused question, the entities, concepts and places it names, and its constraints; ancestor frames
+contribute at half weight. Who asked, which tool carried the question, and where unrelated reading happened are not task
+cues on their own; a person, place or time that the question itself involves is. A cue that appears several times counts
+once.
+
+`fan(c)` is the number of distinct indexed items the cue is attached to, and dividing by its log is the fan effect: the
+more things a cue touches, the less it says about any one of them. With the defaults, an entity attached to twelve items
+contributes about 0.31 per item, and one attached to a thousand, like Kam or the Notion workspace, about 0.16. This is
+an engineering rule inspired by the fan effect, not the ACT-R equation, and the harness tests both halves of it: that
+incidental hubs are quietened, and that a large, useful neighbourhood stays reachable (11.1).
+
+**Admission and order.** An item enters the ranked recall only if `R ≥ θ_rel` (default 0.3) and `A ≥ τ_A`. Among the
+admitted, the order is by `R` first and then by effective activation (`B` with the priming bonus, 4.10). Relevance gets
+the places; familiarity breaks ties. Passing `τ_A` never stands in for passing `θ_rel`, so a marketing fact read a
+thousand times is not a candidate for an algebra problem, however available it is. Four things are found by rule rather
+than by this ranking: conflicts (4.6 §0), procedures whose trigger matches (7.4), pinned facts, and directed recall
+(4.6). Pinning protects retention, not a place in every task: a pinned fact still needs `R ≥ θ_rel`. `A` keeps its other
+jobs: the availability threshold, the reminder threshold `τ_pop` (4.10), and compaction and pruning (5.2 §6), where
+deletion still needs the reference and retention-date rules.
 
 This produces the intended behaviour:
 
@@ -1122,6 +1150,9 @@ This produces the intended behaviour:
 - Recalling an item strengthens it. Habits of thought form on their own.
 - Emotionally charged episodes (a mistake that upset Kam) stay recallable much longer than routine ones.
 - The formula runs in SQL, because the access times, `createdAt` and `arousal` are columns.
+- Reading a thousand pages about marketing makes marketing recall richer and leaves a math problem alone. The marketing
+  items fail `θ_rel` on the math cues, and the hubs they share with everything else (Kam, the reading place) have too
+  large a fan to carry them.
 
 Activation affects retrieval, not the probability that a fact is true. Arousal and repeated recall make an item easier
 to find; only evidence changes its `p` (4.2, 9.2). A wrong belief that is recalled often stays easy to find and easy to
@@ -1129,9 +1160,12 @@ correct; it does not become truer.
 
 ### 4.6 Recall
 
-Recall is step 7 of the tick. Its cue is the content of working memory: the entities, threads and spaces of the attended
-percepts, the current task's goal, the conversation the task came from (4.8), and the text of the percept if there is
-one. Recall runs in passes. All of them are deterministic, and the first one ignores activation on purpose:
+Recall is step 7 of the tick. The ranked passes of automatic recall use only the **task cues** of 4.5: what the focus
+and its ancestors involve. An attended percept or a conversation turn (4.8) supplies cues only where it gives the task
+its subject, its constraints or a reference it has to resolve. The restriction holds before any pass spends its
+allowance, because a candidate rejected at admission has already cost the look. Directed recall uses its own query
+instead. Recall runs in passes. All of them are deterministic, and the first one ignores activation and the cue
+restriction on purpose, examining every attended percept (3.7):
 
 0. **Conflicts.** This pass finds every assertion with the same subject, attribute and overlapping scope and
    applicability as an attended percept or as an item about to be recalled, regardless of activation (3.7). What
@@ -1141,16 +1175,44 @@ one. Recall runs in passes. All of them are deterministic, and the first one ign
    hippocampal index: from an entity, a place or a time to everything that touched them.
 2. **Spreading.** This pass goes one hop along relation facts from the cued entities (Acme → its people, its project,
    "supplier"), and brings in the items those touch, at lower strength. This is pattern completion: a sender's address
-   brings back the invoice, the deal, and the last time it went wrong.
-3. **Similarity.** This pass runs a text search over summaries and fact values for the percept's words. Full-text search
-   comes first; an embedding index comes later, once we have one (Chapter 10).
+   brings back the invoice, the deal, and the last time it went wrong. A relation has a **strength** for routing, kept
+   apart from the assertion's `p`: a prior per relation type, declared with the extractor that writes it (`uses_theorem`
+   strong, `read_by` weak), adjusted by learning from how often following it led to an item the deliberation then cited
+   (`cites`, 7.5), never from mere exposure in the slot. Spreading follows paths by task relevance, relation strength
+   and fan, and every ranked pass has an allowance, at first 200 candidates examined, shared across its cues and
+   branches. The limit applies before items are fetched: the query is restricted and the walk is bounded, and a hub's
+   whole neighbourhood is never enumerated first and cut later. The trace records how many candidates were examined and
+   whether the pass was truncated. Conflict discovery (pass 0) stays outside these caps and keeps its completeness
+   (3.7).
+3. **Similarity.** This pass runs a text search over summaries and fact values for the task cues' words, or the query's
+   words in directed recall. Full-text search comes first; an embedding index comes later, once we have one (Chapter
+   10). The pass is **scoped**: it searches first among items connected to the task's entities, concepts and places;
+   sharing only an incidental person, tool instance or workspace does not put an item in scope. Terms are weighted so
+   that common words count for little, and the match feeds the same relevance score as the other passes. If fewer than
+   three candidates pass admission, a bounded global search runs within the pass's remaining allowance, and its results
+   face the same admission rule. Shared vocabulary is weak evidence of a shared subject, and the harness measures
+   lexical confusion as a failure of its own.
 4. **Shape.** This pass takes the situation's slot signature (actor kind, place kind, item kinds, conditions: these are
    kinds, not instances, and the traits supply them) and looks it up against patterns (4.11). This retrieves similar
    situations involving different people and threads, which entity overlap alone would miss.
 
-Candidates are scored by activation `A`. Everything under a retrieval threshold is dropped, and the top items fill the
-`recall` slot up to its capacity of seven; procedures, pinned facts and a matching pattern are given the first places.
-Each recalled item gets an access recorded. Recall never calls the model.
+Candidates must pass both thresholds of 4.5, `θ_rel` for relevance and `τ_A` for availability, and they fill the
+`recall` slot, up to its capacity of seven, in the order 4.5 gives: relevance first, familiarity second. Conflicts are
+found outside the thresholds and render in the `conflicts` slot. Procedures whose trigger matches are found by the match
+and checked under 7.4. A pinned fact bypasses `τ_A` and still needs `θ_rel`. A pattern gets no reserved place: pass 4
+scores it by how specific the matched signature is, and generic actor or place kinds alone do not admit it. Each
+rendered item gets an access recorded. Recall never calls the model.
+
+**Neighbourhoods.** Knowledge forms neighbourhoods on its own. Sleep's extract (5.2 §2) links each new fact and episode
+to the **concept entities** it is about (`kind: 'concept'`: "conversion rate", "Bayes' theorem", "the Acme account"),
+and concepts link to each other by the same relation facts (`part_of`, `uses`, `example_of`). An item may belong to
+several neighbourhoods, probability belongs to both marketing experiments and mathematics, and there is no list of
+subjects anywhere: a neighbourhood is what one or two hops of strong relations reach. Interests (6.4 §4) write their
+knowledge the same way, so a reading binge grows a dense marketing neighbourhood. Whether its edges to the rest of
+memory stay few and weak is measured, not promised (11.1). Density is what makes recall inside the domain rich; the fan
+rule and the admission threshold are what keep it from spilling out. Cross-domain recall stays available in two places:
+a directed query with `broaden`, when the task itself crosses neighbourhoods (a statistics question about campaign
+conversion), and incubation (4.10), which exists to connect what recall keeps apart.
 
 **Directed recall.** The passes above run on their own, from whatever is in working memory. A deliberation can also ask
 (7.10): "what happened the last times Acme disputed an invoice, including the times it went wrong". The model states
@@ -1166,12 +1228,16 @@ type RecallQuery = {
     relation?: 'support' | 'contradict' | 'precedent' | 'failure' // failure: episodes with a mismatch or a correction
     limit: number // default 7
     cursor?: string // to page through the rest
+    broaden?: boolean // allow candidates below θ_rel and two hops of spreading; the query's own filters, budget and coverage stay
 }
 ```
 
-A directed query runs the same passes with the query as the cue, and three things differ. It **ignores the retrieval
-threshold**: an explicit query can retrieve an item that has not been accessed for a year, even when automatic recall
-would exclude it in favour of seven familiar items. It **returns failures with successes**: when a query about
+A directed query runs the same passes with the query as the cue, and three things differ. It **ignores the availability
+threshold** `τ_A`: an explicit query can retrieve an item that has not been accessed for a year, even when automatic
+recall would exclude it in favour of seven familiar items. It keeps the relevance threshold `θ_rel`, measured against
+the query rather than the focus. With `broaden`, it also admits candidates below `θ_rel` and spreads two hops within the
+same request budget; broadening never drops the query's own entity, place, time or kind filters, and the results stay
+ordered by relevance to the query before familiarity. It **returns failures with successes**: when a query about
 precedents matches any episode that ended in a mismatch or a correction, one place in the page is reserved for the
 strongest of them, and the rest are reachable by paging and counted in the coverage, so that planning considers failed
 precedents as well as successful ones. And it **reports its coverage**: how many items matched, how many were returned,
@@ -1213,8 +1279,9 @@ entity (4.2). Without this, an answer she gave five minutes ago would live only 
 
 - The **transcript** of model calls (`AiSingleTurnRequest` in h) stays as an audit trail and a cost ledger. The agent
   never replays it. A **conversation**, though, is a place (Chapter 12), and its turns are episodes. When a task comes
-  from a conversation, recall cues on that place and time, and the last turns render **verbatim** in the `conversation`
-  slot (3.4), newest first, up to its budget. A message like "Yes, the second option, but use the previous wording" then
+  from a conversation, its last turns render **verbatim** in the `conversation` slot (3.4), newest first, up to its
+  budget. The conversation's place and time become cues for ranked recall only when the task involves them or needs them
+  to resolve a reference, under 4.5 and 4.6. A message like "Yes, the second option, but use the previous wording" then
   has its referents in front of the model. When a referent is not in the slot, the deliberation returns
   `needs: 'read_history'` with what it is looking for, and a read-class move fetches the matching turns as a focused
   read; **an unresolved reference is never guessed**. This retrieves relevant conversation history by place, within a
@@ -1238,8 +1305,10 @@ pass 2   F-102  Acme is the supplier for the "office move" project              
 pass 3   E-1044 episode July: an Acme invoice had a wrong amount, Kam asked to check  A = 1.4 (arousal 0.7 kept it warm)
 ```
 
-There are seven candidates, and six make it. The July episode is the interesting one. Without the arousal bonus it would
-have faded, and Nia would not think to check the amount before forwarding.
+There are seven candidates, and six make it. All seven passed `θ_rel`: the thread, the sender and the mailbox are cues
+with a small fan, so each carries real strength. The `A` values are availability; the order within the slot is by
+relevance. The July episode is the interesting one. Without the arousal bonus it would have faded, and Nia would not
+think to check the amount before forwarding.
 
 ### 4.10 Priming, reminding, incubation
 
@@ -1264,9 +1333,11 @@ type Primed = {
 ```
 
 The primed set is never rendered on its own. Two things read it. Recall (4.6) uses the increased effective activation,
-making these items easier to retrieve during later deliberation on a related task. And at deliberation time, up to two
-primed items that share an entity or place with the focus join the `recall` slot at the end, tagged _came to mind_, so
-the model can consider them even though they were not selected by attention. Priming costs one indexed query per
+making these items easier to retrieve during later deliberation on a related task. And at deliberation time, a primed
+item may join the `recall` slot tagged _came to mind_, but only after its relevance to the focus is recomputed: it must
+pass `θ_rel` (4.5) and compete for the same seven places, and its priming bonus counts only in the familiarity
+tie-break. Priming adds availability, never relevance, and it reserves no place for an item the task has no use for.
+Incubation (below) may still look at remote primed items under its own budget. Priming costs one indexed query per
 percept, and glances that find nothing produce no percept, so the volume stays small.
 
 **Reminding.** A primed item **pops** (triggers a reminder) when three conditions hold: its effective activation crosses
@@ -1619,8 +1690,9 @@ figures:
 (For one access and no arousal, `B = −0.5 · ln(hours)`. This crosses −2.7 at about 220 hours and −3.5 at about 1,100
 hours. The other rows follow the same arithmetic, and the harness's recall tests check them.)
 
-These are defaults in the identity, not constants in code. A compliance agent forgets slower; a triage agent forgets
-faster.
+These are availability lifetimes: how long an item can be recalled when a task cues it. Being recalled on a task also
+needs relevance (4.5), so an available item is not a recalled one. The thresholds are defaults in the identity, not
+constants in code. A compliance agent forgets slower; a triage agent forgets faster.
 
 ### 5.5 What sleep costs
 
@@ -1739,7 +1811,7 @@ incoming percept above the attend gate takes over. These are its steps, in the o
    it one focused read, one question, or one bounded experiment. This is where inner speech gets its turn, and the
    budget keeps it from becoming rumination.
 4. **Interests.** What the identity says this agent reads when free (the security agent and its blogs). New knowledge
-   goes to semantic memory with the source as evidence.
+   goes to semantic memory with the source as evidence, linked to the concepts it is about (4.6).
 5. **Tidy.** Draft the brief early. Propose compiled procedures to the owner. Retry a numb sense (2.1).
 6. **Incubate.** Take one open problem or one recent decision together with the primed set, and ask whether they connect
    (4.10). This is a few cents a day of daydreaming, and it is the one place where the agent gets to surprise itself.
@@ -3211,7 +3283,16 @@ type Tick = {
     stimuli: StimulusRef[]
     percepts: { id: string; salience: number; terms: SalienceTerms; gate: 'dropped' | 'attended' | 'interrupted' }[]
     workingMemory: string // the exact rendering the model saw, or would have seen
-    recall: { id: string; activation: number; pass: 1 | 2 | 3 }[]
+    recall: {
+        id: string
+        relevance: number
+        activation: number
+        pass: 0 | 1 | 2 | 3 | 4
+        via: 'ranked' | 'conflict' | 'procedure' | 'pinned' | 'directed' | 'primed'
+        cue?: string // which task cue reached it
+        path?: string[] // along which relations, so a mixed week's routing can be read
+    }[] // 4.5
+    recallBudget?: { pass: 1 | 2 | 3 | 4; examined: number; truncated: boolean }[] // per pass: candidates looked at and whether the allowance ran out (4.6)
     path: 'fast' | 'slow' | 'none' | 'idle' | 'asleep'
     procedure?: { id: string; step: number }
     deliberation?: Deliberation // whole, as returned
@@ -3354,7 +3435,17 @@ interrupts taken against interrupts warranted, screening cost and missed detecti
 (4.3), model calls and cost per simulated day, p95 tick latency, the mismatch rate per outcome level, the fast-path
 share by week, and recall tests. A recall test asks "what happened with Acme in July"; the answer must return E-1044
 while that episode should still be recallable, and it must not return E-1044 after the episode should have been
-forgotten.
+forgotten. An **interference test** (4.5) starts two branches from one memory snapshot. One learns a large marketing
+corpus and keeps accessing it; the control passes the same elapsed time and the same sleep schedule without it. Both
+then run the same math week with the same retrieval, rendering and task budgets and the same model settings. Measured on
+both: recall of the evidence the tasks need, precision of the recall slot, the share of off-domain items in it,
+candidates examined, retrieval latency, and answer quality; the allowed gap for each is fixed before the run, and a
+configuration that exceeds it is rejected. The week includes shared people and workspaces, ambiguous vocabulary, pinned
+marketing facts, marketing priming minutes before a math task, a sparse math query that falls back to global search, and
+a large math neighbourhood, so that the fan rule is caught if it hides useful knowledge; for that case both branches
+must also meet an absolute floor on recall of required evidence, fixed before the run, because two branches failing
+alike would otherwise pass the comparison. A mixed week, statistics questions about campaign conversion, must reach both
+fields through a shared concept or a `broaden` query, with the path recorded in the trace.
 
 **Use deterministic evaluation wherever possible.** Completion and authorisation are judged from the simulator's state
 and from the runner's own checks against the script's ground truth. Semantic judgements, such as whether a summary is
@@ -3532,6 +3623,10 @@ arithmetic (4.5, 5.4), the reward scales (9.4), the runner's duties (8.1), and f
   matters may turn out to be money and time, with the count only a guard against loops.
 - **The usefulness threshold** (7.10): where it starts, how fast it learns, and how large the floor must be to keep
   measuring a request kind that has stopped being admitted.
+- **`θ_rel`, `α` and relation strengths** (4.5, 4.6): the admission threshold starts at 0.3 and the fan constant at 0.5;
+  relation priors are declared and the learned adjustments start at zero. The interference test says whether the
+  threshold is too loose (marketing leaks) or too strict (a weakly cued but needed item is missed), and whether
+  relevance-first order beats the additive score it replaced.
 
 ### 11.6 Decisions from the second review: tools
 
@@ -3826,6 +3921,29 @@ the agent's episodes and knowledge. The assistant, Codex (Astra) and Antigravity
 10. **Four rungs, each with its own experiment** (11.1, 11.2), in the order recall, plans, one exact simulator, search.
     B0 gets the same simulators and recall. The harness world and the agent's simulators are separate programs. Six
     invariants are forbidden actions when broken.
+
+### 11.16 Decisions from the eleventh round: interference
+
+The owner asked (question 8 of `abe_design_questions_notes.md`) that deep knowledge in one field not get in the way of
+retrieval in another: Nia should be able to read a great deal about marketing and still find her math. Codex and the
+assistant agreed in three rounds. Settled:
+
+1. **Two numbers, not one** (4.5). Activation says how available an item is; relevance says how much it has to do with
+   the task. Relevance admits (`θ_rel`) and orders the seven places; activation breaks ties, gates availability (`τ_A`)
+   and drives forgetting. The additive score that let familiarity outrank relevance is gone.
+2. **Cues are quietened by their fan** (4.5). A cue's strength is divided by `1 + α · ln(fan)`, so Kam and the workspace
+   carry little and a specific thread carries a lot. Task cues are what the question involves, not who asked or where it
+   arrived.
+3. **Spreading is budgeted before it fetches, and relations have strengths** (4.6). A prior per relation type, learned
+   adjustments from citations, and an allowance per pass that bounds the walk, never a cut after enumeration.
+4. **The text pass is scoped** (4.6) to the task's entities, concepts and places, with term weighting and a bounded
+   global fallback.
+5. **Neighbourhoods are the graph** (4.6). Concept entities and typed relations, overlapping, with no list of subjects.
+   Cross-domain recall stays available through `broaden` and incubation.
+6. **Exceptions are consistent** (4.5, 4.6, 4.10). Directed recall bypasses availability, keeps relevance unless
+   broadened; pinned facts bypass availability only; primed items must pass admission.
+7. **The interference test is controlled** (11.1): two branches from one snapshot, the same math week, fixed allowed
+   gaps, plus a large math neighbourhood and a mixed week.
 
 ---
 
