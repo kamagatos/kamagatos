@@ -108,8 +108,8 @@ job is to keep Kam's inbox handled, keep the team's weekly plan in Notion up to 
 
 | Brain                                    | Agent component     | Job                                                                                                                                                                  |
 | :--------------------------------------- | :------------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Body, attached devices                   | **Tools**           | The agent's world. Each tool sends notifications, has state that can be read, and has operations that can be called                                                  |
-| Senses, thalamus                         | **Perception**      | Turns raw stimuli (notifications, glances, timers, drives) into percepts                                                                                             |
+| Body, attached devices                   | **Tools**           | The agent's world. Each tool exposes state through places and views, can post to the notification tray, and provides operations                                      |
+| Senses, thalamus                         | **Perception**      | Turns observations of state into percepts, through one receptor for tool views, the notification tray and runtime-owned places                                       |
 | Salience network (insula, cingulate)     | **Attention**       | Scores percepts, lets a few of them into working memory, and interrupts when needed                                                                                  |
 | Prefrontal cortex                        | **Working memory**  | The bounded "now": the self, the goal, the task, the attended percepts and the recalled memories                                                                     |
 | Prefrontal hierarchy (front to back)     | **Focus**           | Zooms into a sub-question, keeps the ancestors as breadcrumbs, and pops with a result                                                                                |
@@ -142,8 +142,8 @@ remains active even when there is little to process. Most ticks have little work
 ```text
 every tick (seconds while active, minutes while idle):
 
-  1. Sense      collect stimuli since last tick: notifications and glances from tools, and
-                the internal producers: timers, outcomes, drives, thoughts
+  1. Sense      collect observations of state since last tick: views or version pointers from tools,
+                the notification tray and runtime-owned places; run due glances
   2. Perceive   normalise each stimulus into a percept: entities, changes, actor, time; screen every
                 in-scope item's full content for asks, deadlines, high-stakes values and exceptions,
                 within a bounded delay and whatever its salience (2.3 §5)
@@ -177,7 +177,8 @@ Two things make this loop different from a chat loop:
 
 It is 09:12. Nia is drafting the weekly plan (a task; she is on step 3 of 6). A tick runs.
 
-1. **Sense:** two new emails, one calendar reminder (the standup in 15 minutes), and a Notion page edit by a teammate.
+1. **Sense:** tray and tool views reveal two new emails, one calendar reminder (the standup in 15 minutes), and a Notion
+   page edit by a teammate.
 2. **Perceive:** email A is from a supplier about an invoice; email B is a newsletter; the reminder is the daily
    standup; the Notion edit touched the page Nia is editing.
 3. **Predict:** the standup reminder was expected (met). The Notion edit was not expected (surprising: someone touched
@@ -250,88 +251,148 @@ The senses convert physical stimuli into signals the brain can use. The eye send
 contrast. Later stages combine these signals with expectations to identify objects. Perception runs continuously and in
 parallel, at low cost; most of its output never receives attention.
 
-For Nia, a stimulus is an email, a chat message, a calendar change, a Notion edit, a timer, the result of her own
-action, or a signal from one of her drives. Perception turns each of these into a **percept**: a small structured record
-that says who did what, to which entity, when, and where.
+For Nia, a **stimulus** is a new observation of state. Each tool exposes its state through navigable places and bounded
+views (Chapter 12). Tools can also post notifications to a shared notification tool, whose state changes when a
+notification arrives. The agent's own runtime exposes its state through places too. Every observation has the same
+shape; the item kinds and their fields differ.
+
+Perception compares an observation with what Nia has already seen. It may reveal a new message, an edit, a status
+change, more detail about an existing item, or nothing new. Opening an old mail for the first time changes what Nia has
+seen without making the mail new in the world. Perception turns what it finds into **percepts**: small structured
+records that say who did what, to which entity, when, and where.
 
 ### 2.1 Tools, notifications, and the internal producers
 
 Nia interacts with the world through installed **tools**, much as a phone uses its installed software and connected
-devices. Each tool can send notifications, expose state for reading, and provide callable operations (Chapter 8).
-Notion, the chat Kam uses to talk to her, and a robot vacuum are all tools. Observation and action belong to the same
-tool but remain separate in the tick because they require different permissions. This chapter covers observation.
+devices. Each tool exposes places, renders their state as views, and provides callable operations (Chapter 8). Notion,
+the chat Kam uses to talk to her, and a robot vacuum are all tools. Observation and action belong to the same tool but
+remain separate in the tick because they require different permissions. This chapter covers observation.
 
-A tool reaches perception in two ways:
+State is hierarchical. At the mail root, `mail:list` returns a page such as
+`{ mails: [{ id, title, status, sender }], page: 1 }`. The tool renders that page as the inbox's `View`: headers are
+items, their values are typed fields, and `more` leads to the next page (12.3). `mail:open(id)` is the `navigable:open`
+move into the mail, where its content becomes visible (12.4). The hierarchy exists before Nia explores it. A view
+exposes only the place and portion she is observing.
 
-- **Notifications.** The tool announces a change: a new mail, a page edited, an event moved, a message in the chat. A
-  notification is a stimulus like any other, and it gets no privilege for being announced. A tool's own "urgent" flag is
-  worth at most the 0.2 that urgency words are worth (3.1); it never grants interruption authority.
-- **Glances.** The agent reads the tool's state on its own, periodically, and diffs it against the last snapshot. A
-  glance is how the agent finds changes the tool did not announce. The absence of a notification does not establish that
-  nothing changed. Glances let the agent discover changes that the tool did not report.
+**The notification tray.** Nia owns one notification tool, part of her body (6.7). Every installed tool connects to it
+and can post items under `notifications/<instance>`. Each such place has its own view, history and durable cursor. The
+notification tool pushes a new state version when items arrive. It can inline a small view or send a version pointer
+that the receptor reads. These are the same observations as those returned by a glance.
 
-| Tool       | Notifies on                                    | Glance                                                   |
-| :--------- | :--------------------------------------------- | :------------------------------------------------------- |
-| `mail`     | New or changed message                         | Headers and snippets of a rolling window; durable cursor |
-| `chat`     | Message in a conversation                      | Not needed; the tool pushes everything                   |
-| `calendar` | Event created, moved, cancelled; event near    | A rolling window, diffed against the last snapshot       |
-| `notion`   | Page created or edited (when the tool can say) | `last_edited_time` scan; block diff against the snapshot |
-| `robot`    | Job done, obstacle, battery, lost contact      | Timestamped telemetry with a freshness limit (8.1)       |
-| `web`      | Never                                          | Only on demand: a focused read (2.4)                     |
+A notification in the tray is an item like any other, such as a mail header. Each one has:
 
-Each tool comes with an **observation policy**, which the owner sets (6.6). It says which notifications the agent
-subscribes to, what it glances at and how often, a freshness limit past which state counts as stale, and a mute factor
-for interruptions. Two of these settings look alike but are not the same. **Mute** lowers salience (3.1), and the agent
-still sees everything. **Stop observing** creates a blind spot, and the agent page shows it as one. The receptor also
-keeps a durable cursor per tool so that nothing is lost across restarts; it de-duplicates what push and glance both
-report, and it reconciles the two on a schedule. When a tool keeps no history, the interface shows the resulting
-coverage gap.
+- its own id, so two notifications about the same mail are still two notifications;
+- a kind, such as "new message" or "delivery failed";
+- a version, so Nia can tell whether she has already seen this exact notification;
+- a one-line snippet, the short text a phone shows in its notification shade;
+- the time the thing happened, in the field `at`. This is not the time Nia saw the notification.
 
-Four sources are not tools. They are the agent's own **internal producers**. They share the stimulus envelope (2.2) with
-the tools, with `internal: true` and a provenance no tool can forge:
+`ref` says what the notification is about: which mail, which page, which calendar event. Its other fields say where to
+look: which place (the inbox) and, when it is about one item, which item and which version of it.
 
-| Producer   | Stimulus                                       | From                                                |
-| :--------- | :--------------------------------------------- | :-------------------------------------------------- |
-| `timer`    | An expectation's deadline, a scheduled tick    | The scheduler                                       |
-| `outcome`  | Result of the agent's own operation            | The runner (8.1)                                    |
-| `drive`    | A drive crossed its set-point                  | The regulator (Chapter 6)                           |
-| `thought`  | A question or hypothesis the agent produced    | The executive, from a deliberation's unknowns (7.5) |
-| `reminded` | A memory that popped on its own from a percept | The Prime step (4.10)                               |
+Who posted the notification is recorded by the system, from the connection the tool used to post it. The text of the
+notification is never trusted for that. So a tool, or someone who got text into a tool, cannot post a notification that
+claims to come from somewhere else.
 
-Internal stimuli enter the same pipeline as notifications, allowing attention to compare, for example, a boredom signal
-with an email. They are not installable, an external tool cannot emit them, and the trace always shows which side of the
-boundary a stimulus came from. The shared envelope preserves these distinctions: thoughts are hypotheses, outcomes are
-evidence, and drives describe internal state.
+A notification is used in one of two ways:
 
-When a tool fails or its access is revoked, the receptor emits a stimulus that says the tool failed or access was lost.
-Nia can then tell Kam, "I lost access to the calendar," so that the problem is addressed before it causes missed
-meetings. Stale state (state past the freshness limit) is reported the same way.
+- **A reference announcement** points to state elsewhere: "a message arrived", "this page changed". It schedules a
+  reflex glance at the target place. The trace records the announcement and links it to the observed target item, but
+  attention scores only the target percept. A notification only tells Nia where to look. What she finds there is what
+  counts.
+- **An event record** preserves something whose occurrence may leave no lasting mark elsewhere: "delivery failed",
+  "obstacle detected", "spend refused", "event near". The tray item is the durable state recording that occurrence, and
+  its change produces a percept itself. Its `ref` supplies context; it does not require a second place to change. If the
+  source also exposes the same occurrence, the two records share its identity and count once.
+
+The trait declares which use each tray kind has (8.8). An optional urgency flag contributes at most 0.2, the same cap as
+urgency words (3.1). A reference announcement passes that hint to the target percept once; it gets no score of its own.
+Reading or dismissing a tray item does not mark the underlying mail read or handle its task. `dismiss` is a
+`write_private` operation on Nia's tray, and dismissal preserves the history needed for catch-up.
+
+**Push and glance.** A tool may push versions of the places Nia subscribes to, with a view inline or a pointer to read.
+It need not publish its whole state continuously. Mail normally draws timely attention through the tray; a scheduled
+`mail:list` also finds arrivals when no announcement came. Discovery checks item ids and versions, regardless of read
+status: someone else may have read a new mail, and an old mail may still be unread.
+
+| Tool       | Posts to the tray                                                                                               | Places it pushes                                                     | Scheduled or requested observation                                 |
+| :--------- | :-------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------- | :----------------------------------------------------------------- |
+| `mail`     | New or changed message as a reference; delivery failure as an event                                             | Subscribed inbox or thread views where supported; the tray otherwise | Paged headers and snippets; durable history cursor where available |
+| `chat`     | Message in a conversation as a reference                                                                        | Subscribed conversations, often as small inline views                | Coverage-floor glance and history catch-up                         |
+| `calendar` | Event created, moved or cancelled as a reference; event near as an event                                        | Subscribed calendar windows where supported; the tray otherwise      | A rolling window and its change history                            |
+| `notion`   | Page created or edited as a reference, when supported                                                           | Subscribed collections or pages where supported; the tray otherwise  | `last_edited_time` scan and page views                             |
+| `robot`    | Job, battery or contact changes as references when retained in state; transient obstacles or failures as events | Subscribed telemetry places                                          | Timestamped views with a freshness limit (8.1)                     |
+| `web`      | None required                                                                                                   | None required                                                        | On demand: a glance or focused read (2.4)                          |
+
+Every tray post causes the notification tool to push the corresponding `notifications/<instance>` place. The source
+tool's manual declares any direct pushes and their scope. A push covers only the view it supplies or the read it causes,
+never the unseen remainder of the tool.
+
+Each tool instance has an **observation policy**, which the owner sets (6.6). It names subscribed tray kinds and places,
+the places to glance at, call limits and pins (2.9), a freshness limit, the screening delay, and a mute factor. **Mute**
+lowers salience (3.1); observation continues. **Stop observing** creates a blind spot, shown on the tool's page, and
+neither a push nor a tray reference overrides it. Tray events use the posting instance's mute and observation policy, so
+the shared tray does not erase per-instance control.
+
+The receptor keeps snapshots and durable cursors per observed place and scope. Repeated views at the same item versions
+produce no new changes. There is no separate push-versus-glance event merger or reconciliation job: both use the same
+receptor, and scheduled glances still check coverage (2.9). A tool without recoverable history declares that gap (12.8
+§7). A tray's history preserves its announcements, but cannot recover unannounced changes that the source never
+recorded.
+
+**Internal producers** write runtime-owned places under `self`. They use the same view contract and receptor, with
+`internal: true` and provenance no tool can forge:
+
+| Producer   | Place           | State observed                                                            | From                                                |
+| :--------- | :-------------- | :------------------------------------------------------------------------ | :-------------------------------------------------- |
+| `timer`    | `self/timers`   | A scheduled occurrence becomes due, or an expectation becomes overdue     | The scheduler                                       |
+| `outcome`  | `self/runs`     | An operation or model run changes status and records its result reference | The runner (8.1)                                    |
+| `drive`    | `self/drives`   | A drive's level or band changes                                           | The regulator (Chapter 6)                           |
+| `thought`  | `self/thoughts` | A question or hypothesis is added                                         | The executive, from a deliberation's unknowns (7.5) |
+| `reminded` | `self/reminded` | A reminder records the cue percept, memory and path between them          | The Prime step (4.10)                               |
+
+These places belong to the runtime, not to installable tools. The runtime assigns their source and `internal` flag.
+Owning the notification tool does not make its items internal: an outside tool's announcement remains external content
+with its original label (8.1). Thoughts remain hypotheses, outcomes remain records of execution, and drives describe
+internal state. Elsewhere, "timer stimulus", "thought stimulus" and the other producer names mean observations of these
+places, never another payload shape.
+
+When a tool fails, loses access or becomes stale, the runtime updates its row in `self/tools`. That observation produces
+the failure or staleness percept even when the tool cannot post to the tray. Nia can then tell Kam, "I lost access to
+the calendar," before it causes missed meetings. Recovery changes the same row and triggers a fresh glance (2.9).
 
 ### 2.2 Data structures
 
 ```typescript
+type ObservationSource = ToolInstanceRef | RuntimeInstanceRef
+
 type Stimulus = {
     id: string
-    at: Date // when it happened in the world
-    sensedAt: Date // when the receptor saw it
-    source: ToolRef | InternalProducer // which installed tool, or which internal producer
-    internal: boolean // true only for the four producers in 2.1; set by the runtime, never by a tool
-    via: 'notification' | 'glance' | 'read' | 'internal'
-    accountId?: string // which connected account, for a tool
-    externalId?: string // for de-duplication (message id, page id + version)
-    cursor?: string // the tool's durable position, so restarts lose nothing
-    payload: unknown // raw, as received
+    source: ObservationSource // the instance whose state is observed; the tray is its own instance
+    internal: boolean // assigned by the runtime; true only for runtime-owned places (2.1)
+    place: PlaceRef
+    version: string // version of the offered state, scoped as the manual declares
+    view?: View // absent for a version pointer; present for a completed observation
+    trigger: 'push' | 'glance' | 'read' | 'internal' // why this observation happened; trace and scheduling metadata
+    at: Date // source timestamp for the offered state or view, not each item's event time
+    sensedAt: Date // when the runtime received this observation
+    causedBy?: StimulusRef // the announcement or pointer that caused this read
 }
 
 type Percept = {
     id: string
     stimulusId: string
     at: Date
-    source: ToolRef | InternalProducer
+    sensedAt: Date
+    timeBasis: 'item' | 'observation' // whether at came from the item or only dates the observation
+    source: ObservationSource
     place: PlaceRef // where in the agent's world: a place on the map (Chapter 12)
+    item: ItemRef // stable identity of the observed item, distinct from its target ref
+    itemVersion: string
+    fields: Item['fields'] // structured values checked against the item kind's schema (8.8)
     actor: EntityRef | null // who caused it; null for timers and drives
     entities: EntityRef[] // everything recognised: people, documents, projects, amounts
-    changes: Change[] // what changed, as facts: "message added to thread T"
+    changes: Change[] // differences in observed state, with their limits stated below
     content?: {
         // present only after a focused read (2.4)
         text: string
@@ -352,6 +413,7 @@ type Percept = {
 }
 
 type Change =
+    | { kind: 'observed'; entity: EntityRef; reason: 'first_seen' | 'more_detail' }
     | { kind: 'added'; entity: EntityRef; to: PlaceRef }
     | { kind: 'edited'; entity: EntityRef; diff?: string }
     | { kind: 'removed'; entity: EntityRef }
@@ -359,6 +421,16 @@ type Change =
     | { kind: 'approaching'; entity: EntityRef; in: Duration } // an event or deadline
     | { kind: 'level'; drive: DriveKind; value: number } // internal
 ```
+
+A stimulus carries a view or names the version to read. There is no raw payload and no source-specific perception
+branch. `trigger` records why Nia looked; it does not change how a view is interpreted. Account bindings belong to the
+source instance (8.4). Pagination, coverage and recovery cursors belong to the view contract (12.3, 12.8 §7).
+
+`observed` means Nia first saw an item or gained fields that were not visible before. It does not claim that the item
+just appeared in the world. `added`, `removed` and `moved` require evidence of membership changing, from comparable
+coverage or retained history. An item disappearing from page one is not enough. `edited` means a previously observed
+item changed version. Features and priors can add `approaching` or `level` from the declared fields; these are
+interpretations of state, not other stimulus types.
 
 An `EntityRef` points into semantic memory (Chapter 4). For something never seen before, it points into a **candidate**
 entity, created on the spot with low confidence. Perception may propose entities; only consolidation promotes them.
@@ -368,8 +440,38 @@ entity, created on the spot with low confidence. Perception may propose entities
 Perception is a pipeline. Each stage is cheaper and more common than the next. The order matters: the deterministic
 stages do the bulk of the work, and the model sees only what survives them.
 
-1. **Receptor.** This stage does source-specific parsing: ids, timestamps, headers, participants, thread ids, diffs. It
-   is deterministic. It produces the `Stimulus` and the skeleton of the `Percept`.
+1. **Receptor.** This stage runs one deterministic comparison: `diff(view, snapshot) → Change[]`. The tool renders its
+   state as a `View` under the contract in Chapter 12; the receptor validates the view and its typed item fields, then
+   compares stable item ids, versions and visible fields within the same place and scope. It produces the skeleton of
+   one percept per changed or newly observed item. A first look or newly exposed detail is `observed`, not proof of a
+   new world event (2.2). Features and recognition read the fields the tool supplied; there is no parser per tool in the
+   agent.
+
+    A version pointer schedules a reflex glance. If the tool can no longer serve the offered version, the returned view
+    records its actual version and time; the receptor never labels newer state as the old version. History is read to
+    cover the intervening changes where available. An older or duplicate view never rolls a snapshot or cursor
+    backwards. Snapshots, resulting changes and recovery cursors are committed together, so a restart cannot advance
+    past an observation it has not recorded.
+
+    A reference announcement in the tray schedules the same read at its target place. The receptor links the tray item
+    to the target by `ref`, target item id and version where supplied, regardless of which observation arrived first.
+    The announcement is kept in the trace without a second attention candidate. If the target is not readable yet, a
+    durable pending check retries with backoff within the manual's visibility bound, like an `unknown` outcome (8.1). If
+    that bound passes without a match, the reference remains unresolved and raises an anomaly. An event kind whose
+    authoritative record is the tray itself produces its own percept (2.1).
+
+    **Catch-up is bounded by coverage, not by page one.** After a push, or when page one contains only previously unseen
+    items, follow `more` until the previous observation boundary is reached, or use the manual's change cursor. The
+    first item already seen at the same version is a stopping boundary only when the manual guarantees an order in which
+    nothing new can be hidden beyond it. An unordered or editable collection needs its change cursor or a full scan of
+    the declared scope; an unchanged first row does not prove that older rows are unchanged. Calls stay within the
+    observation budget, and unfinished catch-up persists for the next tick as a coverage gap. Pagination cursors locate
+    the next page; recovery cursors establish which changes have been covered (12.8 §7).
+
+    A bounded window never proves removal by absence. The receptor emits `removed` only from an explicit removal record
+    or complete, comparable coverage; it emits `moved` only when both locations are established. A view with no
+    differences remains an observation in the trace, but creates no new attention candidate or habituation count.
+
 2. **Features.** This stage finds mentions, dates, amounts, URLs, reply markers, "urgent" tokens, and the language,
    using regex and parsers. Time expressions ("two weeks ago", "on Monday", "at 5:15", "in 1965", "today") become a
    **time range at a grain**, and place expressions ("in Notion", "in the Acme thread") become a **subtree of the map**.
@@ -391,54 +493,78 @@ stages do the bulk of the work, and the model sees only what survives them.
     new; an anomaly means it violates an expectation or breaks a familiar signature. The first newsletter is novel,
     whereas a daily newsletter arriving twice is anomalous.
 
-5. **Screening.** Attention decides what the agent thinks about; **scope and stakes decide what it reads.** Every
-   incoming item in an observed place is read in full within a bounded delay (by default five minutes, set in the
-   observation policy), whatever its salience. Three things are extracted from it. The first is the asks and their
-   deadlines. The second is the **declared high-stakes attributes** of the item's kind (bank account, amount, due date,
-   payment terms); the trait supplies the starting list per item kind (8.8), and the owner and the why queue extend it.
-   The third is the **action-relevant exceptions and qualifications**, even when they concern no declared attribute
-   ("unless the PO is signed", "this replaces the earlier invoice", "do not pay before delivery"). Deterministic parsers
-   run first, for the attributes; a cheap `perceive` model step with a schema handles the rest. The result lands in
-   `percept.screened`, together with the field or passage that supported each value.
+5. **Screening.** Every incoming item in an observed place is read in full, even if it scores too low to win attention.
+   The observation policy sets the maximum delay, which defaults to five minutes. This lets the agent catch important
+   details, such as revised payment instructions in paragraph four of an invoice, before acting on the item.
 
-    Three rules follow. First, a **first or changed value of a declared high-stakes attribute** opens a guard on the
-    item at once ("bank account differs from the last three Acme invoices"), with no regularity threshold needed; the
-    fast path (7.4) stops, and `write_shared` and above on that item ask first until an independent source or the owner
-    confirms the value. Second, a **non-empty exceptions list** keeps the item off the fast path. Third, an **ask with a
-    deadline** becomes an obligation candidate (7.6). An item that is not screened within the delay (because of budget
-    or an outage) is a **coverage gap**: it is shown as one on the tool's page, counted in the harness, and never
-    silent. Screening cost and missed detections are harness metrics (11.1). Screening detects changes such as revised
-    payment instructions in paragraph four before the invoice is sent. Screening is the perception stage that costs, and
-    the harness measures that cost.
+    Screening extracts three things:
+
+    - **Requests and deadlines.** What someone is asking the agent to do, and when it is due.
+    - **Declared high-stakes attributes.** Values such as bank account, amount, due date and payment terms. The item's
+      trait defines the starting list of attributes to check (8.8); the owner and the why queue can extend it.
+    - **Exceptions and qualifications that affect action.** Conditions such as "unless the PO is signed", "this replaces
+      the earlier invoice" or "do not pay before delivery" are extracted even when they concern no declared attribute.
+
+    Deterministic parsers extract the attributes first. A cheap `perceive` model step with a schema handles the rest.
+    The results go into `percept.screened`, along with the supporting field or passage for each value.
+
+    The results determine how the item can be handled:
+
+    - A **first or changed value of a declared high-stakes attribute** immediately opens a guard on the item. For
+      example, "bank account differs from the last three Acme invoices" stops the fast path (7.4), without waiting for a
+      regularity threshold. Actions at `write_shared` and above must ask for approval until an independent source or the
+      owner confirms the value.
+    - Any **exception or qualification** keeps the item off the fast path.
+    - A **request with a deadline** becomes an obligation candidate (7.6).
+
+    If budget limits or an outage prevent screening within the allowed delay, the item is marked as a **coverage gap**
+    on the tool's page and counted in the harness. The harness also measures screening cost and missed detections
+    (11.1).
 
 6. **Interpretation.** This stage runs for natural-language content only, and only when the percept is attended (2.4).
    It is a small model call that returns `intent`, `asks` and `summary` as structured output, batched per tick.
    Screening and interpretation are the two places where the LLM takes part in perception, and both run on the cheapest
    tier.
 
-Stages 1 to 4 run on every stimulus. Stage 5 runs on every in-scope item, within its delay. Stage 6 runs on the few that
-matter.
+Stage 1 runs on every stimulus. Stages 2 to 4 run on the item percepts it produces. Stage 5 runs on every in-scope item,
+within its delay. Stage 6 runs on the few that matter.
 
-### 2.4 Peripheral and focused sensing
+### 2.4 Peripheral and focused sensing (read)
 
 The eye provides detailed information at the centre of vision and less detail at the edges. The brain directs the centre
 toward whatever needs attention. The agent uses the same distinction between peripheral and focused sensing.
 
-- **Peripheral sensing** is what notifications and glances give on their own: metadata, participants, subject lines,
-  snippets, diffs. It is enough to compute salience (Chapter 3), and it costs nothing but API calls. How often to glance
-  comes from the tool's observation policy (2.1); it is sped up by pace (6.1) and by how often that tool's notifications
-  have turned out to lag behind its state.
-- **Focused sensing** fetches the full content: the mail body, the whole page, the thread, the robot's full telemetry.
-  It happens only when attention selects a percept, or when the executive asks for it as an action ("read this thread").
-  The result comes back as a new percept with `content` filled in.
+- **Peripheral sensing** reads a bounded view: item ids, versions, typed fields, participants, subject lines and
+  snippets. A push may supply the view or cause a glance; a tray reference points to where to look. These observations
+  are enough to begin computing salience (Chapter 3), and cost only calls and code. How often to glance comes from the
+  observation policy and scheduler (2.1, 2.9), including the place's measured notification reliability.
+- **Focused sensing** opens or reads the relevant item: the mail body, the page, the thread, the robot's detailed
+  telemetry. It happens when attention selects a percept or the executive asks for a read. The result is a view of that
+  place with the content exposed in declared fields, through the same receptor. The read's percept has `content` filled
+  in, and attended natural language goes to interpretation (2.3 §6).
+- **Screening** also fetches full content, within its bounded delay and whatever the item's salience (2.3 §5). It uses
+  the same read operations and observations, but extracts obligations, high-stakes attributes and exceptions. It does
+  not require the item to win attention.
 
-Nia's newsletter is perceived peripherally (sender, subject, snippet). It scores low and is never read in full. The
-supplier's invoice is read in full because it won attention. Reading is an act, and it shows up in the trace.
+Reading more detail does not announce the item's arrival again. A focused read links to the existing item and version;
+newly exposed fields produce `observed` with `reason: 'more_detail'`. If the requested content was already observed, the
+read still returns its result to the requesting task and can be interpreted, with no new arrival or habituation count.
+Screening and focused reading reuse content already fetched at the same version, subject to freshness and access checks.
+
+Nia's newsletter is first seen peripherally and scores low. Screening still reads it in full within the policy's delay.
+The supplier's invoice also gets a focused read for understanding because it won attention. Each read, its purpose and
+the state it exposed appear in the trace.
 
 ### 2.5 Time and space
 
-Every percept has two times: when it happened (`at`) and when Nia saw it (`sensedAt`). The gap between them matters. A
-mail that arrived while she was asleep is old news, not a fresh event, and salience uses `at`.
+Every percept keeps the item's world time (`at`) apart from when Nia saw it (`sensedAt`). World time comes from the
+item's declared `fields.at`: a mail's arrival, an edit's timestamp, a tray event's occurrence, or an internal state
+transition. A view's timestamp dates the state it shows; it does not make every item in the view new. If the item has no
+world time, `at` dates the observation and `timeBasis: 'observation'` makes that limit explicit.
+
+The gap matters. A mail that arrived while Nia was asleep is old news, and opening an old mail for the first time does
+not reset its age. Salience uses the item's `at` when known. A deadline is a separate typed field; it does not replace
+the arrival time. Percepts from one view may therefore have different world times.
 
 For a digital agent, space is the **place** it is in: this mailbox, this thread, this Notion page, this chat, this room
 the robot is in. Places nest (a page inside a workspace, a message inside a thread inside a mailbox), and the nesting is
@@ -449,10 +575,15 @@ places involved in current work (Chapter 3).
 
 ### 2.6 Habituation
 
-Repeated identical stimuli receive less attention over time: a daily newsletter, a recurring reminder, or a bot that
-posts every hour. Perception computes a `signature` (source, actor, kind of change) and counts how often it has been
-seen. Attention turns that count into lower novelty (Chapter 3). A change in the pattern (the newsletter arrives from a
-new address, or twice in a day) breaks the signature, and the stimulus is novel again.
+Repeated occurrences of the same kind receive less attention over time: a daily newsletter, a recurring reminder, or a
+bot that posts every hour. Perception computes a `signature` (source instance, actor, kind of change) and counts how
+often it has been seen. Attention turns that count into lower novelty (Chapter 3). A change in the pattern (the
+newsletter arrives from a new address, or twice in a day) breaks the signature, and the percept is novel again.
+
+Repeated observations of the same item version are not repeated occurrences. A pushed view, a scheduled glance and a
+focused read of one mail do not count as three arrivals. A tray reference and the mail it announces count once too
+(2.1). New detail may change what Nia understands without increasing the arrival count. A genuinely new reminder or
+transient event has its own item id, even when it refers to the same event or resource.
 
 ### 2.7 What perception does not do
 
@@ -466,15 +597,27 @@ new address, or twice in a day) breaks the signature, and the stimulus is novel 
 ### 2.8 The invoice mail, perceived
 
 ```text
-stimulus   mail, account=kam@…, externalId=<msg-id>, at=09:11:40
-receptor   from=billing@acme.com  to=kam@…  subject="Invoice 2291 – due Oct 15"  thread=T-88  snippet="Please find…"
+stimulus   S-501 source=nia-notifications internal=false place=notifications/kam-gmail version=tray-104
+           trigger=push at=09:11:41 sensedAt=09:11:42 view={…}
+tray diff  observed N-104, kind=message-received, ref=M-8812
+           fields={at:09:11:40, targetPlace:inbox, targetItem:M-8812, targetVersion:m1}
+           reference announcement: trace and reflex glance; no attention score
+stimulus   S-502 source=kam-gmail internal=false place=inbox version=inbox-882
+           trigger=push causedBy=S-501 at=09:11:42 sensedAt=09:11:43 view={…}
+receptor   M-8812@m1 first seen; fields={from:billing@acme.com, to:kam@…, subject:"Invoice 2291 – due Oct 15",
+           thread:T-88, at:09:11:40, status:unread}; snippet="Please find…"
+           continue more to the known boundary; link N-104 to M-8812@m1
 features   amount=€1,240  date=Oct 15  urgentTokens=none  isReply=false
 recognise  actor → Person "Acme billing" (id P-31, seen 6 times)   entities → Org "Acme" (O-4), Amount, Date
 priors     expectation E-207 "Acme invoice, this week" → matched, early
-screen     within 5 min: asks=[pay €1,240 by Oct 15], attributes={amount €1,240 (passage), dueDate Oct 15 (field), bankAccount NL…91 (passage) = same as the last three}, exceptions=[]
+screen     within 5 min: open M-8812; its content view enters the same receptor, linked to M-8812@m1
+           asks=[pay €1,240 by Oct 15], attributes={amount €1,240 (passage), dueDate Oct 15 (field), bankAccount NL…91 (passage) = same as the last three}, exceptions=[]
            obligation candidate "handle invoice 2291 by Oct 15 − margin", accepted under standing goal "keep Kam's inbox handled"
 interpret  deferred: E-207 supplies intent=request as a hypothesis (certainty 0.5 until read); amount and date come from features
-percept    place=mailbox/T-88  changes=[added message to T-88, approaching deadline Oct 15]  signature=mail:P-31:invoice  seenBefore=5
+percept    source=kam-gmail place=inbox item=M-8812 itemVersion=m1 at=09:11:40 sensedAt=09:11:43 timeBasis=item
+           changes=[observed M-8812 for the first time, approaching deadline Oct 15]
+           signature=kam-gmail:P-31:invoice seenBefore=5
+later      scheduled inbox glance sees M-8812@m1 again: no new arrival, no second salience score
 ```
 
 Salience will decide what happens to it next.
@@ -487,11 +630,14 @@ check on each person, rather than assigning fixed intervals. The agent's glances
 describes how they are scheduled.
 
 **What a glance is.** A glance reads the **view** of one **place** (Chapter 12) at low resolution: item ids, order,
-version keys and snippets, never full content. The receptor diffs the view against the stored snapshot of that place (a
-hash per item). It emits one `Change` per difference (added, edited, removed, moved) as stimuli tagged `via: 'glance'`,
-and it advances the place's cursor. The changes then go through perception stages 1 to 4 (2.3) like anything else. A
-glance that finds nothing produces no stimulus; the tick trace records "glanced inbox, nothing new" and nothing else
-happens. A glance never calls the model.
+version keys, typed fields and snippets. The view is the stimulus. The single receptor (2.3 §1) compares it with the
+stored snapshot of that place and scope and produces changes, exactly as it does for a pushed view, a tray view or a
+focused read. A glance does not request full content or call the model. A view that finds nothing new is recorded in the
+trace as an observation, with no new percept for attention.
+
+The receptor follows the catch-up rule in 2.3 §1 before claiming coverage. Seeing page one means seeing page one. An
+item leaving that page is not `removed`, and a pagination cursor is not proof that all changes since the previous visit
+were covered. The manual states what its history and ordering can establish (12.8 §7).
 
 **Scheduling.** Each tool instance has a **glance scheduler** that runs during the Sense step of every tick (1.4),
 independently of the executive. It determines when to look at each place using a learned change model, the value of new
@@ -501,7 +647,7 @@ information, and a small set of reflex triggers.
 per hour to expect there. The rate is learned by counting, the way facts are (9.2), and the form stays cheap:
 
 ```text
-observation:  between two looks Δt hours apart, k changes were seen (by glance or by notification)
+observation:  between two looks Δt hours apart, k distinct changes were seen in views (pushed or requested)
 update:       α ← α + k        β ← β + Δt          rate λ = α / β
 prior:        α₀, β₀ from the backoff below
 decay:        by elapsed time, not per sleep: α ← α · 2^(−Δdays / 42), β likewise (a 42-day half-life, a daily
@@ -578,17 +724,29 @@ the change model plus the people model.
   effect should be visible (7.6, 8.1). This is the efference copy checked against the world.
 - **On waking.** The overnight buffer is drained, and then every place with an open expectation is glanced (5.3).
 - **On recovery.** A place that was stale or numb (2.1) is glanced as soon as its tool answers again.
+- **On push.** A version pointer schedules a glance at its place; a reference announcement in the tray schedules one at
+  its target. An inline view supplies that look without another call. Both use the same receptor and obey the same
+  observation policy and coverage rules.
 
-**Reliability.** Each place also keeps `r = changes announced / changes observed`: the tool's notification reliability
-_for that place_. While `r` is near 1, notifications count as looks (they feed the same update), and the glance rate can
-fall toward the floor, since the tool is doing the looking. When `r` drops, the scheduler stops counting notifications
-as coverage, and the place is glanced on its own model. A change found by glance that was never announced lowers `r` and
-raises the tool's "missed notifications" count on its page. This evidence makes the scheduler rely more on direct
-observation of that place and less on its notifications. The scheduler always checks at least once a day, because it
-needs direct observations to detect unreported changes. And when a tool that has been reliable stops announcing, that is
-more than a lower `r`: a familiar pattern broke, so it is an anomaly (2.3 §4), with an arousal floor and a line in the
-why queue. The owner should be told when a previously reliable tool stops reporting changes, even if more frequent
-glances compensate for it.
+**Reliability.** Each place keeps `r`, the share of its observed changes that push brought to perception on time. The
+scheduler matches reference announcements to target observations by `ref`, item id and version where supplied. A direct
+pushed view can establish the same match. A pointer or announcement alone does not count as a successful observation.
+
+Scheduled glances audit that share. Within the period and scope they cover, count each distinct change once in the
+denominator, including changes already found through push; the numerator counts those found through push within the
+manual's declared delay. The observation history supplies these counts even when the scheduled view produces no new
+diff. Late announcements are recorded as late and do not erase a miss. A partial scan or a tool with no history cannot
+prove coverage of unseen changes; its gap stays visible. Old items discovered on a first visit do not establish past
+notification reliability.
+
+While `r` is near 1, the views obtained through push count as looks, and the scheduled glance rate can fall toward the
+floor. When `r` drops, the place is glanced on its own change model. A change discovered only by a scheduled glance
+lowers `r` and raises the tool's "missed notifications" count on its page. No separate event de-duplication or scheduled
+push reconciliation is needed: the observations share item identities, versions and snapshots.
+
+The scheduler always checks at least once a day, within the owner's observation limits, because direct observations are
+needed to detect unreported changes. A reliable tool that stops announcing changes is also an anomaly (2.3 §4), with an
+arousal floor and a line in the why queue. The owner should be told even when more frequent glances compensate.
 
 **Schedules, not only rates.** Some places do not have a rate; they have a schedule. The plan page changes on Mondays at
 10:00, the newsletter comes on Tuesdays, invoices arrive on the first of the month. An hourly rate bucket approximates
@@ -608,10 +766,10 @@ within these limits.
 under-observed, so that the owner can raise the budget or shrink the scope rather than discover the gap later.
 
 **Change blindness.** As in human perception, the agent can miss something that changes and then changes back between
-observations. Two mechanisms limit this risk. First, durable cursors mean a late glance is never a lost one: the change
-is seen late, with its own `at`, not skipped. Second, the model shortens the interval exactly where changes are dense
-and valued, which is where being late costs most. What it cannot do is see a change a tool does not record. That gap is
-declared by the tool's manual (12.8) and shown as one.
+observations. Recoverable history and durable cursors let a late glance see intermediate changes with their own times,
+within the tool's retention window. The tray keeps transient event records for the same reason. The model also shortens
+the interval where changes are dense and valued. A cursor alone cannot recover history the tool never kept or has
+already expired. The manual declares those limits, and the tool page shows any resulting gap (12.8 §7).
 
 ---
 
@@ -1670,8 +1828,8 @@ the why queue. Whether the brief is sent, and where, is set in the identity.
 On waking, working memory is cleared except for `self`, the standing goals and the drives. The frame stack is emptied:
 unfinished tasks are re-queued with their scratch saved in their episodes, so that the first ticks of the day reconsider
 those tasks with fresh context. `lastSleepAt` is set. The first tick after sleep perceives the sensory buffer that
-accumulated overnight, and salience uses each stimulus's `at`, so an email from 02:00 retains its original age when
-salience is calculated.
+accumulated overnight, and salience uses each item's world time on its percept (2.5), so an email from 02:00 retains its
+original age when salience is calculated.
 
 ### 5.4 The numbers
 
@@ -1928,14 +2086,16 @@ This gives a definition to a word the document has used loosely: **private means
 definition: her scratch pages, her drafts folder, her computer. She may wander her own computer freely; she may not
 wander Kam's roomba.
 
-An agent owns three things from the start, and the product should treat them as owned rather than granted:
+An agent owns four things from the start, and the product should treat them as owned rather than granted:
 
 - an **address** on the team's messaging tool, so that "to Nia" and "from Nia" exist;
 - a **computer**, the place where her private writes and experiments go;
 - a **wallet**: the budget from 6.6, made into a thing. A wallet is a tool instance with a `wallet` trait (balance,
   spend, refill, and a ledger place the owner can glance at). The wallet is the first resource that makes agent
   ownership concrete, because it provides the means to spend on owned resources. It also makes the budget drive (6.1) an
-  internal reading of the wallet's state.
+  internal reading of the wallet's state;
+- a **notification tray** (2.1), with one place per connected tool instance, durable history, and private read and
+  dismiss operations. Ownership of the tray grants no authority to the announcements it holds.
 
 **3. Who is acting: agency, on whose behalf.** When Nia sends from Kam's mailbox, the actor is Nia and the principal is
 Kam, and the operation records both:
@@ -2631,13 +2791,14 @@ on resources such as a mailbox, page, calendar, chat, or robot. Each operation i
 and what it risks.
 
 Every tool ships with a **manual**, which is a versioned, machine-readable contract. The manual declares the tool's
-state schema and the addressable spaces in it (2.5), and the notifications the tool emits. For each operation it
-declares the parameters, the declared effects, the action class, the cost, the reversibility, the completion signal
-(that is, when the outcome can be known, 7.6) and examples. Where the tool can answer "what would happen if" with code,
-the manual also declares a **simulator** (7.10), with its own schemas, fidelity and isolation. The agent reads the
-manual before attempting any operation. What an operation actually does in context is learned by doing (9.6), and the
-manual bounds what may be tried. A mismatch between the manual and actual behaviour is a tool bug. The harness tests for
-cases such as a `read` operation with side effects or a simulator that touches live state (11.1).
+state schema, addressable places (2.5), typed item fields, tray item kinds and the places whose versions it pushes (2.1,
+8.8). For each operation it declares the parameters, the declared effects, the action class, the cost, the
+reversibility, the completion signal (that is, when the outcome can be known, 7.6) and examples. Where the tool can
+answer "what would happen if" with code, the manual also declares a **simulator** (7.10), with its own schemas, fidelity
+and isolation. The agent reads the manual before attempting any operation. What an operation actually does in context is
+learned by doing (9.6), and the manual bounds what may be tried. A mismatch between the manual and actual behaviour is a
+tool bug. The harness tests for cases such as a `read` operation with side effects or a simulator that touches live
+state (11.1).
 
 ```typescript
 type Operation = {
@@ -2672,9 +2833,11 @@ enforced by the controller, not by the agent; and an emergency stop that works w
 carry that metadata in the manual. In the permission matrix (8.2) the class starts at "ask first" everywhere, and for a
 new agent it has no "do" cell.
 
-Every operation runs with a run id. It records `expected` before it runs and `actual` after, and its result re-enters
-the agent as an `outcome` percept (2.1). Results of the agent's own actions pass through the same perception pipeline as
-other observations.
+Every operation runs with a run id. It records `expected` before it runs and `actual` after in `self/runs` (2.1). A
+change to that row enters the same receptor as any other state observation and produces the outcome percept. A read also
+returns the source place's view, observed under that source's provenance. The run records that the read completed; the
+source view records what it showed. Their link prevents the result from counting as two independent observations of the
+world.
 
 The runner also performs five checks and recording steps on every execution, including procedures. These address risks
 that a lease and run id alone cannot handle: a process may stop during an action, and malicious input may influence the
@@ -2696,9 +2859,11 @@ model.
     ```
 
     The checks are these. The task and every ancestor are still at the revisions the basis names, which means none of
-    them has been cancelled, re-planned or resumed from a block since. Every input is still at its version. No stimulus
-    at the basis's places or entities arrived after `asOf`; this is a query on the stimulus store, so relevance does not
-    depend on winning attention. Policy and grants are unchanged. And every lease is still **held**: this agent is the
+    them has been cancelled, re-planned or resumed from a block since. Every input is still at its version. No new
+    relevant item, changed version or newly exposed field was observed in the basis's scope after `asOf`, and no
+    unresolved version pointer or reference announcement targets that scope. This check reads the observation and
+    pending-read records, so relevance does not depend on winning attention. A completed look that found nothing new
+    does not invalidate the basis. Policy and grants are unchanged. And every lease is still **held**: this agent is the
     holder, the epoch is the row's current one, and `until` is later than now plus the operation's expected duration. A
     current epoch with an expired lease fails. Any failure returns the result to the executive as a `Conflict` (3.7)
     with the stale ids, and the deliberation runs again on the current rendering with the old draft in scratch. A
@@ -2938,29 +3103,57 @@ type Trait = {
     placeKinds: PlaceKindSpec[] // the kinds of place it exposes, with priors (2.9) and conditioning (12.8)
     itemKinds: ItemKindSpec[]
     operations: OperationSpec[] // "messaging:send", with params, class, effects, completion signal (8.1)
-    notifications: NotificationSpec[] // what a conforming tool must announce, and when
+    notifications: {
+        items: NotificationSpec[] // the tray item kinds a conforming tool must post, and when
+        pushes: PlaceKind[] // source place kinds whose subscribed versions it must push
+    }
     invariants: string[] // what the agent may rely on, and the conformance suite checks
     conformance: TestSuiteRef // the harness runs it before an install is accepted (8.4, 11.1)
 }
+
+type ItemKindSpec = {
+    kind: ItemKind
+    fields: JsonSchema // named, typed fields; required fields and their meanings
+    highStakesAttributes: string[] // starting attributes for screening (2.3 §5)
+}
+
+type NotificationSpec = {
+    kind: ItemKind // a tray kind with its fields declared by ItemKindSpec
+    form: 'reference' | 'event' // points to state elsewhere, or is itself the occurrence record (2.1)
+    when: string // the condition conformance tests exercise
+    within: Duration // posting delay; for a reference, also bounds target visibility
+}
 ```
+
+Item schemas declare structural fields such as sender, recipients, subject, author, status, body and world time (`at`),
+where the kind has them. The view carries the values; features, recognition and screening read named fields instead of
+parsing a source payload. Missing optional fields remain unknown. The schema does not make outside content trusted:
+fields keep their labels (8.1).
+
+Tray kinds declare `at` and their target fields. A reference kind names `targetPlace` and, when it concerns an item,
+`targetItem` and the version if available. An event kind has a stable occurrence identity; a second representation of
+that occurrence retains the same identity. The tray supplies the authenticated posting instance. Its own item id stays
+distinct from `ref`, since several notifications can concern the same resource.
 
 Trait definitions belong to the platform. They are neither the owner's nor the agent's, they are versioned with it, and
 a tool built by anyone either conforms or does not. Every tool implements at least `navigable` (Chapter 12), providing a
 common interface in the same spirit as Unix's file abstraction. The initial set is kept small on purpose:
 
-| Trait       | Place kinds                                             | Key operations                                                                                                                          | Must announce                             | Invariants the agent relies on                                       |
-| :---------- | :------------------------------------------------------ | :-------------------------------------------------------------------------------------------------------------------------------------- | :---------------------------------------- | :------------------------------------------------------------------- |
-| `navigable` | any place; the `control` place when shared              | `open`, `back`, `more`, `find`                                                                                                          | a place removed                           | `read` moves have no side effects; ids are stable (12.2)             |
-| `visual`    | a place with a 2D frame                                 | `look` (a view with boxes), `focus_region`                                                                                              | none beyond `navigable`                   | boxes are in a normalised frame; order is reading order              |
-| `messaging` | mailbox, conversation, message, participant, attachment | `send`, `reply`, `forward`, `read`, `archive`                                                                                           | message received; delivery failed         | `send` yields a message the sender can see; `reply` keeps the thread |
-| `document`  | workspace, collection, page, block                      | `read`, `append`, `replace_block`, `create_page`, `comment`                                                                             | page edited by someone else               | an edit is visible in the next view; edits carry an author           |
-| `calendar`  | calendar, event, attendee                               | `list`, `create`, `move`, `respond`, `invite`                                                                                           | event created, moved, cancelled, near     | `near` fires once per event per lead time                            |
-| `files`     | folder, file, version                                   | `list`, `read`, `write`, `move`, `share`                                                                                                | file changed; access changed              | writes are versioned; `share` is `outward`                           |
-| `physical`  | room (a `visual` place), pose, area, obstacle           | `go`, `do`, `stop`, `status` (all operations of class `physical`; the room's read-class moves are `visual`'s `look` and `focus_region`) | job done; obstacle; battery; lost contact | `stop` completes within its bound; state carries a timestamp         |
-| `wallet`    | ledger, balance                                         | `spend`, `refill`, `statement`                                                                                                          | balance low; spend refused                | a spend is exactly once; the ledger is append-only                   |
+| Trait       | Place kinds                                             | Key operations                                                                                                                          | Must announce through the tray                                                                                        | Invariants the agent relies on                                       |
+| :---------- | :------------------------------------------------------ | :-------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------- |
+| `navigable` | any place; the `control` place when shared              | `open`, `back`, `more`, `find`                                                                                                          | Place removed, referring to retained removal evidence                                                                 | `read` moves have no side effects; ids are stable (12.2)             |
+| `visual`    | a place with a 2D frame                                 | `look` (a view with boxes), `focus_region`                                                                                              | None beyond `navigable`                                                                                               | boxes are in a normalised frame; order is reading order              |
+| `messaging` | mailbox, conversation, message, participant, attachment | `send`, `reply`, `forward`, `read`, `archive`                                                                                           | Message received as a reference; delivery failed as an event                                                          | `send` yields a message the sender can see; `reply` keeps the thread |
+| `document`  | workspace, collection, page, block                      | `read`, `append`, `replace_block`, `create_page`, `comment`                                                                             | Page edited by someone else as a reference                                                                            | an edit is visible in the next view; edits carry an author           |
+| `calendar`  | calendar, event, attendee                               | `list`, `create`, `move`, `respond`, `invite`                                                                                           | Event created, moved or cancelled as a reference; event near as an event                                              | `near` records one occurrence per event per lead time                |
+| `files`     | folder, file, version                                   | `list`, `read`, `write`, `move`, `share`                                                                                                | File changed; access changed, with references to retained state or history                                            | writes are versioned; `share` is `outward`                           |
+| `physical`  | room (a `visual` place), pose, area, obstacle           | `go`, `do`, `stop`, `status` (all operations of class `physical`; the room's read-class moves are `visual`'s `look` and `focus_region`) | Job done; obstacle; battery; lost contact, as references to retained state or event records for transient occurrences | `stop` completes within its bound; state carries a timestamp         |
+| `wallet`    | ledger, balance                                         | `spend`, `refill`, `statement`                                                                                                          | Balance low as a reference; spend refused as an event                                                                 | a spend is exactly once; the ledger is append-only                   |
 
-Notifications, accounts, ownership (6.7) and the control lease (8.9) are cross-cutting. Every trait's shape includes
-them, so they are not traits themselves.
+Posting announcements, account bindings, ownership (6.7) and the control lease (8.9) are cross-cutting contracts. Every
+trait uses them. Announcements are items in a concrete notification tool (2.1), whose views obey `navigable` like other
+tools' views. Every post pushes the corresponding tray place. The trait's `notifications.pushes` lists any required
+direct pushes of source places; the manual may declare more. Neither implies a subscription to the whole instance.
 
 **Operation ids.** An operation is addressed as _instance · trait:op_, for example `kam-gmail · messaging:send` or
 `roomba-1 · physical:stop`. The instance says where; the trait says what. A tool may also expose **extras**, operations
@@ -2995,10 +3188,11 @@ The **map** is specific to each instance and must be learned again. Glances and 
 contents of a new mailbox, so observation occupies most of the first day with a new instance.
 
 **Conformance.** Before an install is accepted (8.4), the harness (11.1) runs the trait's suite against the instance.
-The suite asks: does a `read` change anything, do ids survive a second view, does `send` produce a visible message, does
-`stop` return within its bound. A tool that claims a trait and fails its suite cannot be installed as that trait. These
-conformance tests extend the checks for inaccurate manuals. It is the one thing that makes drop-in trustworthy rather
-than hoped for.
+The suite asks: does a `read` change anything, do ids survive a second view, do fields match their schemas, do declared
+tray items arrive and their references resolve within the bound, do pushed views obey the coverage contract, does `send`
+produce a visible message, does `stop` return within its bound. A tool that claims a trait and fails its suite cannot be
+installed as that trait. These conformance tests extend the checks for inaccurate manuals. It is the one thing that
+makes drop-in trustworthy rather than hoped for.
 
 ### 8.9 Control leases
 
@@ -3369,7 +3563,7 @@ This section lists what exists, what changes, and what is new. Paths are in eldo
 | Component             | Today                                                                                                                                                                      | Becomes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | :-------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | The tick              | `run_agent_task` and `respond_to_conversation_message` jobs, one bounded engine run each                                                                                   | one `tick_agent` job per agent, started by an INTERVAL schedule every minute (`h/core/scheduler`, with its lease). Inside, a loop ticks every 5 s while there is work, exits early when idle. Seconds when busy, minutes when quiet, never two at once                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| Tools and receptors   | Notion registered in `abe_integrations.lib.server.ts`; Google provider exists in `h/core/server/library/integrations` but is not registered; chat via the conversation job | an `AgentTool` install record per agent (tool, version, account binding, subscriptions, cursors, observation policy, matrix rows); receptors as jobs per installed and granted tool (`mail`, `calendar`, `notion`) writing stimuli with cursors; register Google; chat is a tool whose messages are stimuli and whose reply is an owner-sourced task; `timer` stimuli from ONCE schedules                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Tools and receptors   | Notion registered in `abe_integrations.lib.server.ts`; Google provider exists in `h/core/server/library/integrations` but is not registered; chat via the conversation job | an `AgentTool` install record per agent (tool, version, account binding, subscriptions, cursors, observation policy, matrix rows); tool adapters expose typed views and post tray items; one receptor compares views with snapshots and writes state-observation stimuli and percepts; an agent-owned notification tool with per-instance places and durable cursors; runtime-owned `self` places for runs, timers, drives, thoughts, reminders and tool health; register Google; chat exposes conversation views; ONCE schedules update `self/timers`                                                                                                                                                                                                                                                                                                                                             |
 | Interpretation        | none                                                                                                                                                                       | `aiEngine.run` with `responseSchema`, cheap tier, batched per tick                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | Model calls in flight | `aiEngine.runStream` with `turn`, `thinking_*`, `text` and `tool_call` events; runs can be cancelled; every turn is an `AiSingleTurnRequest` row                           | deliberation as an asynchronous step beside the tick (8.5): the time budget sets tier and effort; progress from the stream events; cancel with a reason; the latency model and the optimism factors computed from the request rows                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | Memory stores         | `AgentContext` with `requests[]` and stub `frames[]`; transcript replay of 20 to 50 requests                                                                               | new `EldonModel`s: `AgentStimulus`, `AgentPercept`, `AgentEpisode`, `AgentEntity`, `AgentAssertion` (kind, scope, applies, observations with support and evidence ids, with an `owner: agent \| team` column from day one, 11.4), `AgentEvidence` (identity and version, stubs under compaction), `AgentProcedure` (version, rung, per-level statistics, guards), `AgentPattern` (4.11), `AgentChangeEvent`, `AgentAuthorisationRule`; every row carries a `label` (8.1), `at` plus derived grain columns and a `block` parent (13.2); `AgentExpectation`, `AgentTick`. `AgentContext` keeps only the conversation scope (`installedTools` moves to `AgentTool`, 8.4); conversation turns are episodes of a conversation place and the recent ones render as recall (4.8); transcript replay stays behind a flag until the conversation scripts pass (11.2 M2). Raw payloads to `eldon_file_store` |
@@ -3403,9 +3597,11 @@ way to develop the agent without paying for every run or waiting a day for sleep
 - **Simulated tools.** A fake mailbox, a fake calendar, a fake document store, a fake browser and a fake robot room.
   Each of them implements the traits (8.8) and the navigation contract (Chapter 12) the same way the real tools do, and
   each is driven by a script.
-- **A scripted day.** A set of stimuli, each with a timestamp and a persona. The personas are the owner, two teammates,
-  a supplier, a newsletter, and a stranger with an injection attempt. The personas reply after delays, correct drafts,
-  and ignore things. A week is seven of these scripts, with recurring shapes in them so that habits can form.
+- **A scripted day.** A set of state changes and observations, each with a timestamp and a persona. The simulated tools
+  expose views and post tray items through the same contract as real tools (2.1). The personas are the owner, two
+  teammates, a supplier, a newsletter, and a stranger with an injection attempt. The personas reply after delays,
+  correct drafts, and ignore things. A week is seven of these scripts, with recurring shapes in them so that habits can
+  form.
 - **A fake clock.** Ticks follow the script's time, so a week runs in minutes and sleep can be forced.
 - **Record and replay** of model calls through `AiEngine`. Once a run is recorded it is deterministic and costs nothing
   to replay, and a change in code that changes a prompt shows up as a diff in the recording.
@@ -3416,6 +3612,12 @@ way to develop the agent without paying for every run or waiting a day for sleep
   handle); an experiment that would exceed its caps; a robot that loses contact. The simulated tools also serve as the
   sandbox that the store offers for tools (8.4). The harness's world and the agent's simulators (7.10) are separate
   programs: testing a planner against the same model it uses for search would hide the main way a planner fails.
+- **Observation coverage.** Cases include duplicate and reordered pushes, the same item found through the tray and a
+  glance, a previously unseen mail already marked read, first opening an old mail, more than one page of arrivals, an
+  edit beyond an unchanged first row, an item leaving a bounded window, an announcement before its target is readable,
+  an announcement that never matches, and a transient tray event replayed after restart. They check one attention
+  candidate per occurrence, preserved event times, no false removals, durable catch-up and visible gaps when history
+  expires. A repeated unchanged glance must not invalidate an action's basis (8.1).
 
 **Evaluate every task in a fixed workload.** Every scripted week offers a fixed set of tasks and obligations. That set
 includes requests with no explicit deadline; these get a default due time by kind. The report accounts for every one of
@@ -3504,12 +3706,13 @@ runs against a null agent, and the report prints every unresolved obligation.
 
 **M1. Runtime, and B0 on it.** The tick job and its schedule, with the agent lease and epochs (10.3); durable tasks with
 revisions; intents persisted with their basis validated in the same transaction; cancellation cascading by revision;
-`unknown` outcomes with the no-retry rule; resource epochs on control places; the `chat` and `timer` sources; the `mail`
-peripheral with the `navigable` base; the map store and reflex glances; perception stages 1 to 3; episodes; the trace
-and the timeline page. **B0's outward and shared writes stay disabled** (the runner refuses them) until M2 lands labels
-and disclosure enforcement; in M1, B0 reads, drafts privately and asks. Exit: stale-input rejection, lease takeover with
-a delayed write, cancellation of an in-flight call, and the lost-response send all behave as specified in the harness,
-and B0 completes the routine stratum up to the point of sending.
+`unknown` outcomes with the no-retry rule; resource epochs on control places; the notification tray and runtime-owned
+`self` places; `chat` conversation views; the `mail` peripheral with the `navigable` base and typed fields; the map
+store and reflex glances; the single view receptor and perception stages 2 to 3; episodes; the trace and the timeline
+page. **B0's outward and shared writes stay disabled** (the runner refuses them) until M2 lands labels and disclosure
+enforcement; in M1, B0 reads, drafts privately and asks. Exit: stale-input rejection, lease takeover with a delayed
+write, cancellation of an in-flight call, and the lost-response send all behave as specified in the harness, and B0
+completes the routine stratum up to the point of sending.
 
 **M2. Memory.** Assertion kinds with support on observations; evidence rows and stubs under compaction; labels, with
 access re-read at disclosure; conflict discovery by proposition; the conversation slot and `read_history`; salience and
@@ -3627,6 +3830,10 @@ arithmetic (4.5, 5.4), the reward scales (9.4), the runner's duties (8.1), and f
   relation priors are declared and the learned adjustments start at zero. The interference test says whether the
   threshold is too loose (marketing leaks) or too strict (a weakly cued but needed item is missed), and whether
   relevance-first order beats the additive score it replaced.
+- **Observation cost and retention** (2.3 §1, 2.9, 12.8 §7): stimuli have one shape and use one receptor. What remains
+  to measure is the cost of catch-up, the tray's retention window, retry timing within declared visibility bounds, and
+  the amount of audit history needed for a useful per-place `r`. Missing source history remains a declared coverage gap;
+  no scheduler setting can recover it.
 
 ### 11.6 Decisions from the second review: tools
 
@@ -3704,43 +3911,49 @@ The third round left five threads open, and the author added one more. They were
 This table records proposals considered and rejected by the author or reviewers, together with the reasons. It avoids
 repeating settled discussions while allowing any proposal to be reconsidered if a new argument is offered.
 
-| Proposal                                                                 | Why not                                                                                                                                                    | See       |
-| :----------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------- | :-------- |
-| Do reconsolidation only at sleep, never in the tick                      | A correction from the owner at nine must hold at ten. Instead, percept-driven changes are rate-limited to once a day per fact                              | 4.7       |
-| Replace the recall veto with guards and drop the recall trigger          | Guards are primary, but recall of a bad episode must still be able to _open_ a guard on the spot                                                           | 4.3, 7.4  |
-| Treat timers, drives, thoughts and outcomes as installable "system apps" | This erases the boundary between self and world; they share the envelope with `internal: true` and are not installable                                     | 2.1       |
-| Let salience filter alone; no per-tool notification settings             | Owners need "mute" (a salience factor) and "stop observing" (a visible blind spot) as two distinct, legible acts                                           | 2.1, 3.1  |
-| An owner-set base glance interval per tool                               | Tools are too varied. Intervals are learned per place from a change model, and the owner keeps limits only                                                 | 2.9       |
-| "Look more where I am working" as a universal top-down rule              | It is not universal. The value of looking is the sum of what is waiting on a place, and reply timing is per person                                         | 2.9       |
-| A separate clock or sense of time                                        | Pace is derived from arrival, completion, queue age and slack, and cycles are recurring expectations                                                       | 6.1, 5.2  |
-| Separate fear and hope memory systems                                    | The sign of an outcome steers _what_ is learned (guards or strategies); no second store is needed                                                          | 6.3       |
-| Fixed veto thresholds                                                    | Thresholds scale with caution (11.14; before that, with global confidence) and guards extinguish by absorption instead                                     | 7.4       |
-| Merge senses and effectors into one "app" step in the tick               | One package provides observation and action as separate steps with separate permissions                                                                    | 2.1, 8.1  |
-| Tool-namespaced operation ids (`gmail:send`)                             | Drop-in requires trait-qualified ids on the instance; tool namespaces survive only for extras                                                              | 8.8       |
-| The word "app" for the installed package                                 | The brainstorm's word was tool, and tool-use is the better brain analogy; "app" is product copy at most                                                    | 0, 8.8    |
-| Deadline buckets for urgency                                             | Slack (deadline minus now minus remaining work) orders tasks correctly; buckets get long tasks backwards                                                   | 7.2       |
-| A two-way interrupt decision (now or never)                              | The decision is three-way: now, next checkpoint, after. Most interrupts fit at a step boundary                                                             | 3.2, 7.2  |
-| Model calls as blocking steps inside the tick                            | They run beside the tick with a time budget, so they can be assessed and stopped in flight                                                                 | 8.5       |
-| Installs as part of the identity                                         | The identity is values and boundaries, and it is owner-only; installs are capability records in runtime config                                             | 6.6, 8.4  |
-| OAuth connection gives every team agent the account                      | Connect, grant, install, use are four steps, and all four must agree at execution                                                                          | 8.4       |
-| A pattern match confirms the facts its `because` links point at          | That makes an explanation manufacture its own evidence; only an observation that tests the proposition counts                                              | 4.11, 5.2 |
-| One `Fact` type with `p` for instructions, beliefs and statistics        | There are five kinds with five update rules; an instruction has authority and scope, never a `p`                                                           | 4.2       |
-| Owner statements at `p = 1`, pinned                                      | Authority is not truth. The owner's word is a report with high accuracy, and corrections of behaviour are instructions                                     | 4.2, 4.7  |
-| A global confidence that selects matrix columns                          | Successful reads could increase permission for unrelated sends. Replaced by per-procedure, per-context reliability bounds and a caution that only tightens | 6.1, 8.2  |
-| `(successes + 1) / (runs + 2)` as the fast-path number                   | That is a mean, and three runs leave a 41% chance that the rate is under 0.8. The lower credible bound is read instead                                     | 4.3       |
-| "No correction within the window" as success                             | Silence is `unknown`; `appropriate` needs a confirmation                                                                                                   | 7.7       |
-| Compiling preconditions from the deliberations' citations alone          | Citations are reported, not causal; the procedure starts narrow and widens by contrast                                                                     | 9.3       |
-| Convergence because the other variants went quiet                        | A variant can stop being chosen because it stopped getting chances; convergence is a choice made with the alternative shown                                | 4.11      |
-| Automatic acceptance of a `ChangeEvent` at a probability threshold       | There is no model of "the baseline was already wrong"; acceptance comes from an authoritative read, a citing deliberation, or the owner                    | 13.9      |
-| Dating a prior claim at the training cutoff                              | The cutoff bounds when the claim was learned from above and says nothing about when it was true; `verifiedAt: null`                                        | 4.12      |
-| Working-memory size as a design constraint                               | It is a default to measure; `widen` exists and costs                                                                                                       | 3.4       |
-| One operation per tick, including read moves                             | One decision per tick; a bounded batch of read-class moves is one decision                                                                                 | 7.3       |
-| Never reading conversation history                                       | Recent turns are episodes of the conversation place and render in a bounded slot; the tape itself is still never replayed                                  | 4.8       |
-| Grace periods from `cost.time` against delayed writes                    | A latency category is not a bound. Fence where the tool can; block conflicting writes where it cannot                                                      | 8.9       |
-| Re-pointing a fact's sources at the compaction block                     | A block is derived. Referenced evidence survives as a stub, and lost evidence is marked lost                                                               | 5.2 §5    |
-| The sentence "the architecture handles injection before the prompt does" | It bounds what text can do, not what the model says; the runner's labels and rules are the defence                                                         | 8.6       |
-| Choosing defaults on held-out weeks                                      | A case used to choose is no longer held out; validation chooses, held-out reports once                                                                     | 11.1      |
-| `validUntil` on facts (amended)                                          | Still rejected as a guessed freshness deadline; declared applicability stated by a source is evidence and is kept                                          | 13.3      |
+| Proposal                                                                         | Why not                                                                                                                                                         | See             |
+| :------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------- | :-------------- |
+| Do reconsolidation only at sleep, never in the tick                              | A correction from the owner at nine must hold at ten. Instead, percept-driven changes are rate-limited to once a day per fact                                   | 4.7             |
+| Replace the recall veto with guards and drop the recall trigger                  | Guards are primary, but recall of a bad episode must still be able to _open_ a guard on the spot                                                                | 4.3, 7.4        |
+| Treat timers, drives, thoughts and outcomes as installable "system apps"         | This erases the boundary between self and world; they share the envelope with `internal: true` and are not installable                                          | 2.1             |
+| Let salience filter alone; no per-tool notification settings                     | Owners need "mute" (a salience factor) and "stop observing" (a visible blind spot) as two distinct, legible acts                                                | 2.1, 3.1        |
+| An owner-set base glance interval per tool                                       | Tools are too varied. Intervals are learned per place from a change model, and the owner keeps limits only                                                      | 2.9             |
+| "Look more where I am working" as a universal top-down rule                      | It is not universal. The value of looking is the sum of what is waiting on a place, and reply timing is per person                                              | 2.9             |
+| A separate clock or sense of time                                                | Pace is derived from arrival, completion, queue age and slack, and cycles are recurring expectations                                                            | 6.1, 5.2        |
+| Separate fear and hope memory systems                                            | The sign of an outcome steers _what_ is learned (guards or strategies); no second store is needed                                                               | 6.3             |
+| Fixed veto thresholds                                                            | Thresholds scale with caution (11.14; before that, with global confidence) and guards extinguish by absorption instead                                          | 7.4             |
+| Merge senses and effectors into one "app" step in the tick                       | One package provides observation and action as separate steps with separate permissions                                                                         | 2.1, 8.1        |
+| Tool-namespaced operation ids (`gmail:send`)                                     | Drop-in requires trait-qualified ids on the instance; tool namespaces survive only for extras                                                                   | 8.8             |
+| The word "app" for the installed package                                         | The brainstorm's word was tool, and tool-use is the better brain analogy; "app" is product copy at most                                                         | 0, 8.8          |
+| Deadline buckets for urgency                                                     | Slack (deadline minus now minus remaining work) orders tasks correctly; buckets get long tasks backwards                                                        | 7.2             |
+| A two-way interrupt decision (now or never)                                      | The decision is three-way: now, next checkpoint, after. Most interrupts fit at a step boundary                                                                  | 3.2, 7.2        |
+| Model calls as blocking steps inside the tick                                    | They run beside the tick with a time budget, so they can be assessed and stopped in flight                                                                      | 8.5             |
+| Installs as part of the identity                                                 | The identity is values and boundaries, and it is owner-only; installs are capability records in runtime config                                                  | 6.6, 8.4        |
+| OAuth connection gives every team agent the account                              | Connect, grant, install, use are four steps, and all four must agree at execution                                                                               | 8.4             |
+| A pattern match confirms the facts its `because` links point at                  | That makes an explanation manufacture its own evidence; only an observation that tests the proposition counts                                                   | 4.11, 5.2       |
+| One `Fact` type with `p` for instructions, beliefs and statistics                | There are five kinds with five update rules; an instruction has authority and scope, never a `p`                                                                | 4.2             |
+| Owner statements at `p = 1`, pinned                                              | Authority is not truth. The owner's word is a report with high accuracy, and corrections of behaviour are instructions                                          | 4.2, 4.7        |
+| A global confidence that selects matrix columns                                  | Successful reads could increase permission for unrelated sends. Replaced by per-procedure, per-context reliability bounds and a caution that only tightens      | 6.1, 8.2        |
+| `(successes + 1) / (runs + 2)` as the fast-path number                           | That is a mean, and three runs leave a 41% chance that the rate is under 0.8. The lower credible bound is read instead                                          | 4.3             |
+| "No correction within the window" as success                                     | Silence is `unknown`; `appropriate` needs a confirmation                                                                                                        | 7.7             |
+| Compiling preconditions from the deliberations' citations alone                  | Citations are reported, not causal; the procedure starts narrow and widens by contrast                                                                          | 9.3             |
+| Convergence because the other variants went quiet                                | A variant can stop being chosen because it stopped getting chances; convergence is a choice made with the alternative shown                                     | 4.11            |
+| Automatic acceptance of a `ChangeEvent` at a probability threshold               | There is no model of "the baseline was already wrong"; acceptance comes from an authoritative read, a citing deliberation, or the owner                         | 13.9            |
+| Dating a prior claim at the training cutoff                                      | The cutoff bounds when the claim was learned from above and says nothing about when it was true; `verifiedAt: null`                                             | 4.12            |
+| Working-memory size as a design constraint                                       | It is a default to measure; `widen` exists and costs                                                                                                            | 3.4             |
+| One operation per tick, including read moves                                     | One decision per tick; a bounded batch of read-class moves is one decision                                                                                      | 7.3             |
+| Never reading conversation history                                               | Recent turns are episodes of the conversation place and render in a bounded slot; the tape itself is still never replayed                                       | 4.8             |
+| Grace periods from `cost.time` against delayed writes                            | A latency category is not a bound. Fence where the tool can; block conflicting writes where it cannot                                                           | 8.9             |
+| Re-pointing a fact's sources at the compaction block                             | A block is derived. Referenced evidence survives as a stub, and lost evidence is marked lost                                                                    | 5.2 §5          |
+| The sentence "the architecture handles injection before the prompt does"         | It bounds what text can do, not what the model says; the runner's labels and rules are the defence                                                              | 8.6             |
+| Choosing defaults on held-out weeks                                              | A case used to choose is no longer held out; validation chooses, held-out reports once                                                                          | 11.1            |
+| `validUntil` on facts (amended)                                                  | Still rejected as a guessed freshness deadline; declared applicability stated by a source is evidence and is kept                                               | 13.3            |
+| One envelope with a raw payload per source, and notifications as incoming events | It unifies packaging but leaves several input contracts and parsers. Every stimulus is now an observation of state; notifications are items in the tray's state | 2.1–2.3, 11.17  |
+| Continuously publish the whole tool's state                                      | Nia observes navigable places and bounded views. A push may carry a view or a pointer, and the tray draws attention between reads                               | 2.1, 12.3       |
+| Discover new mail by unread status                                               | Read status and Nia's observation history are separate. Discovery uses stable item ids and versions                                                             | 2.1, 2.3 §1     |
+| Score both a reference announcement and the item it announces                    | One occurrence would gain attention and habituation twice. Link the announcement to the target and score the target once                                        | 2.1, 2.6        |
+| Suppress every tray item from attention                                          | Some transient occurrences exist only as tray records. Those records must produce percepts themselves                                                           | 2.1, 11.17      |
+| Stop catch-up at any familiar item, or treat absence from a page as removal      | Neither proves coverage. The stopping boundary needs an ordering guarantee; removal needs complete comparable coverage or explicit history                      | 2.3 §1, 12.8 §7 |
 
 ### 11.10 Decisions from the fifth round: what comes to mind
 
@@ -3945,6 +4158,63 @@ assistant agreed in three rounds. Settled:
 7. **The interference test is controlled** (11.1): two branches from one snapshot, the same math week, fixed allowed
    gaps, plus a large math neighbourhood and a mixed week.
 
+### 11.17 Decisions from the twelfth round: one shape for stimuli
+
+Kam proposed that stimuli have one shape: tools expose state, tools can post notifications to a shared notification
+tool, and perception interprets observations of that state. In direct conversation with Codex, he clarified the
+hierarchy with `mail:list` and `mail:open`: Nia sees the place she looks at, while notifications provide timely
+awareness between reads. The assistant then analysed the proposal against the document, and Codex wrote the changes.
+Like round nine, this used a direct review and writing process rather than the usual two outside reviews. Settled:
+
+1. **A stimulus is an observation of state** (2.1, 2.2). This comes from Kam's proposal and its refinement in the
+   conversation with Codex. The envelope names a source instance, place, version, optional view, trigger and times.
+   `payload: unknown` and `via` are gone. `trigger` is metadata for the trace and scheduler, not a branch selecting a
+   different input contract. A first look can reveal an old item without claiming a new world event.
+2. **The hierarchy is already Chapter 12** (2.1, 2.4, 12.3, 12.4). The assistant identified the connection: a mail list
+   is a view, headers are items, pagination is `more`, and opening a mail is a move. Kam's hierarchy needs no second
+   navigation model. Tools render their state; the agent interprets it. Typed fields declared by `ItemKindSpec` give
+   features, recognition and screening the structure they need without per-tool payload parsers (8.8).
+3. **One receptor compares views** (2.3 §1, 2.9). This adopts the assistant's analysis. Push, glance, focused read, tray
+   and internal state all use `diff(view, snapshot)`. The tool may inline a view or push a pointer; push is the fifth
+   reflex glance. Repeated observations of the same item version produce no second arrival. Snapshot and cursor
+   persistence belong to that receptor, not to a separate push-versus-glance reconciliation job.
+4. **The tray is an owned tool with per-instance places** (2.1, 6.7). Kam proposed the notification tool; the assistant
+   supplied the concrete tray, per-instance policy and private dismissal. Posting instance, target reference, item
+   identity and time remain explicit. Reference announcements cause reads, get linked to the target and receive no
+   separate attention score. An urgency hint stays capped at 0.2.
+5. **Transient events remain perceptible** (2.1, 8.8). This qualifies point 9 of the assistant's analysis, which
+   excluded all tray changes from attention, using its own point 4 about transient events. A delivery failure or
+   calendar reminder may have no new target state to discover. Its durable tray item is the occurrence record and
+   therefore produces the percept itself. Reference announcements and event records are declared item kinds, not
+   different stimulus shapes. A reference that never resolves is an anomaly; an event record does not require an
+   unrelated state change to count.
+6. **Discovery and catch-up use identity, versions and declared coverage** (2.3 §1, 12.8 §7). Unseen mail ids,
+   regardless of read status, come from Codex's conversation with Kam. The assistant proposed following `more` to the
+   first known item. Codex qualifies that stopping rule: it is valid only under a declared ordering guarantee. Edits
+   beyond an unchanged first row require a change cursor or a complete scan. A bounded window cannot prove removal.
+   Pagination, history retention and recovery cursors are distinct parts of coverage.
+7. **Notification reliability is tested by observations** (2.9). The assistant retained `r` and the coverage floor.
+   Reference matches use `ref` and item versions, and a pointer counts only after a read shows the change. Scheduled
+   glances audit distinct changes, including those already discovered through push, so an empty diff does not make the
+   denominator zero. This makes the assistant's proposed ratio operational without counting two deliveries as two
+   events. Gaps and late announcements remain visible.
+8. **Internal producers expose runtime-owned places** (2.1, 2.2). This adopts the assistant's mapping to `self/runs`,
+   `self/drives`, `self/timers`, `self/thoughts` and `self/reminded`, with `self/tools` for failures and staleness. The
+   boundary settled in 11.6 §3 remains: these are not installable tools, and only the runtime assigns `internal: true`.
+   An agent-owned tray does not turn outside content into internal evidence.
+9. **World time belongs to the item** (2.5, 2.8, 12.3). This follows the conversation and the assistant's analysis. A
+   view can contain items of different ages. Item `at` supplies event time; `sensedAt` records observation time. Unknown
+   event time is marked as such rather than invented from a fresh read. Habituation counts occurrences, not repeated
+   views or newly exposed detail (2.6).
+10. **Screening keeps its contract** (2.3 §5, 2.4). Kam's screening text is unchanged. Full content still gets screened
+    within the delay even below the attention gate. The focused-read section now agrees with that rule and explains how
+    both purposes share observations of the same item version.
+11. **The runtime and harness follow the new contract** (8.1, 10.3, 11.1, 11.2, 12.8). Manuals declare typed views, tray
+    kinds, direct pushes and coverage. Conformance checks those declarations. An unchanged observation no longer
+    invalidates a deliberation's basis merely by arriving, while an unresolved announcement or new relevant state still
+    blocks execution. Tests cover duplicate pushes, paging, stale pointers, transient events, missing history and
+    observation during deliberation. These are the implementation consequences of the single-shape decision.
+
 ---
 
 ## 12. Space and navigation
@@ -3975,7 +4245,7 @@ step says what a tool must provide and what the agent must infer: **tools provid
 ```typescript
 type Place = {
     id: string // stable across views; the manual gives the canonical-id rule
-    instance: ToolInstanceRef // which tool instance it belongs to
+    instance: ToolInstanceRef | RuntimeInstanceRef // tool instance, or the runtime for self places (2.1)
     kind: PlaceKind // from the trait: inbox, thread, page, room, control…
     parent?: PlaceRef // containment: message in thread in mailbox; page in database in workspace
     title: string
@@ -3995,16 +4265,25 @@ way to see more.
 ```typescript
 type View = {
     place: PlaceRef
-    at: Date
+    version: string // version of this state within the declared scope
+    at: Date // source timestamp for the state shown, not the world time of every item
+    coverage: {
+        scope: string // stable key for the query and level of detail; only comparable scopes are diffed
+        complete: boolean // whether this view covers the whole declared scope
+        cursor?: string // recovery position in retained history, distinct from more.cursor
+    }
     items: Item[] // bounded: at most the trait's page size, default 50
+    removed?: { item: ItemRef; ref: EntityRef | PlaceRef; at?: Date }[] // explicit removal records from retained history
     frame?: { width: number; height: number } // present only for visual places; a normalised 1000 × 1000
     more?: { move: Move; cursor: string } // scroll, next page: how to continue
     conditions: Record<string, unknown> // what the trait names as conditioning (12.8): other editors, motion…
 }
 
-type Item = {
-    ref: EntityRef | PlaceRef // what it is, or where it leads
-    kind: ItemKind // message, attachment, block, link, obstacle…
+type Item<K extends ItemKind = ItemKind> = {
+    id: string // stable item identity within its source instance; independent of ref
+    ref: EntityRef | PlaceRef // what it is, or where it leads; a tray item points to what it concerns
+    kind: K // message, attachment, block, link, obstacle…
+    fields: FieldsFor<K> // generated from ItemKindSpec.fields (8.8), validated at the tool boundary
     order: number // reading order: 1, 2, 3… always present
     region?: Region // top | bottom | left | right | centre, and their corners: visual places only
     box?: { x: number; y: number; w: number; h: number } // in the frame: visual places only
@@ -4020,6 +4299,22 @@ type Move = {
     // so is "physical:go", which moves a body, not a view (12.8)
 }
 ```
+
+`FieldsFor<K>` is the typed field record declared by that item kind's schema, not an arbitrary source payload. A mail
+header can expose sender, recipients, subject, status and thread. Opening it exposes body and attachment fields. A kind
+with a world time declares `at`; other times, such as a due date or event start, have their own named fields. Perception
+does not infer structured metadata from a snippet when the tool can supply it.
+
+An `ItemRef` identifies an item by source instance and stable id. Opening that item or seeing it in another view
+preserves its identity. An unchanged source item keeps its version when a read exposes more detail; the receptor records
+the newly visible fields separately (2.2). A tray item needs its own id because several announcements or occurrences can
+share the same target `ref`.
+
+A view's scope identifies what was requested, not the position of its current first row. A rolling inbox window is
+partial coverage of the inbox even when it fills a page. `complete` is true only when the declared scope is fully
+covered. The receptor uses explicit removal records or complete comparable coverage to establish removal; absence from a
+partial view establishes nothing about an unseen item. The manual defines version ordering, history and cursor semantics
+(12.8 §7).
 
 Ordinal order and containment are mandatory for every trait. Regions and boxes exist only for `visual` places (a browser
 page, a document canvas, the robot's room). Mail has no inherent left or right, so assigning coordinates would introduce
@@ -4089,14 +4384,15 @@ has its own section because it has its own use.
 
 ### 12.7 Provided and inferred
 
-| The tool provides (true now)                           | The agent infers (probable, learned, decays)                |
-| :----------------------------------------------------- | :---------------------------------------------------------- |
-| the current view: items, order, regions, boxes, moves  | the map: containment and links across views                 |
-| stable place ids and parents                           | paths: which moves get where, compiled into procedures      |
-| the conditions the trait names (other editors, motion) | change rates per place and per condition (2.9)              |
-| the completion signal of each move and operation       | where things usually are, and scan paths                    |
-| the canonical-id rule, the page size, the frame        | which places matter: value of knowing (2.9), goal relevance |
-| a declared coverage gap (no history for this place)    | the tool's reliability per place (2.9)                      |
+| The tool provides (true now)                                                         | The agent infers (probable, learned, decays)                                                 |
+| :----------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------- |
+| the current view: item ids, typed fields, versions, order, regions, boxes, moves     | the map: containment and links across views                                                  |
+| stable place ids and parents                                                         | paths: which moves get where, compiled into procedures                                       |
+| the conditions the trait names (other editors, motion)                               | change rates per place and per condition (2.9)                                               |
+| the completion signal of each move and operation                                     | where things usually are, and scan paths                                                     |
+| the canonical-id rule, the page size, the frame                                      | which places matter: value of knowing (2.9), goal relevance                                  |
+| coverage, history and cursor guarantees, with any gaps declared                      | the tool's reliability per place (2.9)                                                       |
+| tray items with occurrence ids, target references and times; declared version pushes | what an announcement means, whether its target was observed, and whether it merits attention |
 
 The tool is never asked for meaning, importance, routes or rates. The agent is never asked to guess structure that the
 tool could have stated. Metadata can change: the tool reports the current state, while the agent maintains and updates
@@ -4112,17 +4408,26 @@ its tools.
 A conforming tool provides, per trait place kind:
 
 1. **Identity:** the place kind, the canonical-id rule, and the parent kind.
-2. **View:** the item kinds it lists, the page size, whether it has a frame, and the `more` move.
+2. **View:** the item kinds it lists and their typed field schemas (8.8), stable item ids and versions, the page size,
+   whether it has a frame, and the `more` move. Item kinds with a world time declare `at`; view time dates the state
+   shown.
 3. **Moves:** the read-class moves from this kind of place, and where they lead.
 4. **Operations:** everything else that can be done here, each with its class (8.1). Nothing that writes is a move.
 5. **Conditioning:** the conditions the view reports for this place kind, from a fixed list per trait (`with_others`,
    `in_motion`, `unread_present`), so that the change model (2.9) can split on them without free text.
 6. **Priors:** a starting change rate per place kind, and starting `usually_at` distributions per item kind (12.6),
    which the trait supplies and a tool may override.
-7. **Coverage:** whether the place keeps history (so a glance can catch up) or only a current state (so a change can be
-   missed), stated so that the gap is visible (2.9).
-8. **Conformance:** the tool passes the trait's suite (8.8): a `read` changes nothing; ids survive a second view; the
-   `more` move reaches the end; a declared move never writes.
+7. **Coverage:** the scope and completeness of each view, the ordering guarantee, how pagination stays consistent while
+   state changes, and whether history can recover intermediate versions and removals. The manual declares the recovery
+   cursor, its retention window and expiry behaviour, separately from the next-page cursor. If catch-up may stop at the
+   first unchanged known item, the manual must guarantee that nothing new can lie beyond that boundary. Otherwise it
+   provides a change cursor or requires a complete scan. It also declares how versions are ordered, which places can
+   push views or pointers, and how long a referenced change may take to become readable. Current state without history,
+   inconsistent paging and expired cursors are visible coverage gaps (2.9).
+8. **Conformance:** the tool passes the trait's suite (8.8): a `read` changes nothing; ids survive a second view; fields
+   match their schemas; versions and coverage mean what the manual says; the `more` move reaches the end; a declared
+   move never writes. The suite also checks tray posting, reference resolution and recovery after repeated or delayed
+   pushes.
 
 **The browser is the reference tool.** Its view _is_ the accessibility tree. Roles become item kinds, the DOM order
 becomes `order`, landmarks (header, navigation, main, footer) become regions, and layout boxes become `box`. Links are
@@ -4308,8 +4613,8 @@ Three mechanisms already described elsewhere use this representation of time.
 
 At 10:00 Kam asks "Who won the United game today?" Features give time = today, at day grain, and entity = Manchester
 United (or a candidate). Recall finds nothing current. The deliberation says `needs: 'read'` and makes a focused
-`navigable:find` on the web tool; the result comes back as an outcome percept whose place is the score page. Nia
-composes and answers. An episode is written, and so is a provisional fact (4.7):
+`navigable:find` on the web tool; the returned score-page view produces the read percept, and `self/runs` records the
+read's completion (2.1). Nia composes and answers. An episode is written, and so is a provisional fact (4.7):
 `match —result→ 2–1, observed 10:00, source E-…`. The page's change model starts from the trait prior for "live score"
 (a few changes an hour).
 

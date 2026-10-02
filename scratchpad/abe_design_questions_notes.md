@@ -42,6 +42,8 @@
 
     The time decay should also be dynamically computed.
 
+8. Is working memory kept in between ticks? What's the cost of re-computing it for every tick?
+
 ## Resolved
 
 8. Knowledge Graph
