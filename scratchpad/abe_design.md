@@ -63,19 +63,20 @@ The design follows the brain's **organisation**: how it divides responsibilities
 work, and forgets information. Each of these choices addresses a problem the agent also faces. The design does not
 simulate neurons.
 
-| Brain trait                                     | Problem it solves for us                                                | Experiment that would reject it (11.1)                                                                                    |
-| :---------------------------------------------- | :---------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------ |
-| Continuous sensing with limited attention       | Being always on is cheap; only a few things ever reach the LLM          | Learned attention misses more obligations than screening everything would at the same cost                                |
-| Working memory holds ~4 to 7 chunks             | Prompts stay small, fast, and readable in a debugger                    | For each task kind, a wide rendering finishes with fewer errors and fewer calls than a split or a zoom does (3.4)         |
-| Several memory systems, not one                 | Facts, events and skills need different storage and different retrieval | A single store with retrieval does as well on the held-out weeks                                                          |
-| Sleep consolidates and forgets                  | Memory stays fast and relevant; noise is dropped, not kept              | Forgetting loses items the agent later needed; there is no gain over archiving everything                                 |
-| Habits run without thinking                     | Most repeated work costs no LLM call and takes milliseconds             | Compiled procedures do not beat authored procedures plus a model, measured as completion per cost                         |
-| Prediction first, then surprise                 | Novelty and errors are detected for free, and they drive learning       | Expectation misses do not predict corrections better than chance                                                          |
-| Drives (hunger, boredom, curiosity)             | The agent acts unprompted, and it knows when to stop spending           | Unprompted actions are not useful more often than they cost                                                               |
-| Emotion tags memories and steers attention      | Important things are remembered and handled with care                   | Arousal-weighted retention does not keep what corrections later needed                                                    |
-| Language is one region, not the whole brain     | The LLM is one component used by the agent                              | The baseline B0 (a capable model, durable tasks, an enforced runner) matches the full agent                               |
-| Interference, not capacity, limits memory (4.5) | Learning a lot about one thing does not make the rest harder to find    | Recall of the evidence a math week needs falls after a large marketing corpus is learned, against a control branch (11.1) |
-| Thinking ahead at a choice point (7.10)         | Code tests difficult decisions before execution                         | Directed recall, durable plans and simulators do not improve correct, timely completion at equal or lower cost            |
+| Brain trait                                      | Problem it solves for us                                                | Experiment that would reject it (11.1)                                                                                    |
+| :----------------------------------------------- | :---------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------ |
+| Continuous sensing with limited attention        | Being always on is cheap; only a few things ever reach the LLM          | Learned attention misses more obligations than screening everything would at the same cost                                |
+| Working memory holds ~4 to 7 chunks              | Prompts stay small, fast, and readable in a debugger                    | For each task kind, a wide rendering finishes with fewer errors and fewer calls than a split or a zoom does (3.4)         |
+| Several memory systems, not one                  | Facts, events and skills need different storage and different retrieval | A single store with retrieval does as well on the held-out weeks                                                          |
+| Sleep consolidates and forgets                   | Memory stays fast and relevant; noise is dropped, not kept              | Forgetting loses items the agent later needed; there is no gain over archiving everything                                 |
+| Habits run without thinking                      | Most repeated work costs no LLM call and takes milliseconds             | Compiled procedures do not beat authored procedures plus a model, measured as completion per cost                         |
+| Prediction first, then surprise                  | Novelty and errors are detected for free, and they drive learning       | Expectation misses do not predict corrections better than chance                                                          |
+| Drives (hunger, boredom, curiosity)              | The agent acts unprompted, and it knows when to stop spending           | Unprompted actions are not useful more often than they cost                                                               |
+| Emotion tags memories and steers attention       | Important things are remembered and handled with care                   | Arousal-weighted retention does not keep what corrections later needed                                                    |
+| Language is one region, not the whole brain      | The LLM is one component used by the agent                              | The baseline B0 (a capable model, durable tasks, an enforced runner) matches the full agent                               |
+| Interference, not capacity, limits memory (4.5)  | Learning a lot about one thing does not make the rest harder to find    | Recall of the evidence a math week needs falls after a large marketing corpus is learned, against a control branch (11.1) |
+| Thinking ahead at a choice point (7.10)          | Code tests difficult decisions before execution                         | Directed recall, durable plans and simulators do not improve correct, timely completion at equal or lower cost            |
+| Learning the value of advice from outcomes (9.2) | Sources differ in accuracy and can improve or deteriorate               | Learned accuracy saves calls by missing work, punishes correct sources, or fails completion and timeliness in any stratum |
 
 The language-cortex row is the most important. In most "LLM agents" the model is the whole brain: memory is a
 transcript, a decision is the next token, and every step is a call. Here the LLM is the **language and reasoning
@@ -457,8 +458,16 @@ stages do the bulk of the work, and the model sees only what survives them.
     to the target by `ref`, target item id and version where supplied, regardless of which observation arrived first.
     The announcement is kept in the trace without a second attention candidate. If the target is not readable yet, a
     durable pending check retries with backoff within the manual's visibility bound, like an `unknown` outcome (8.1). If
-    that bound passes without a match, the reference remains unresolved and raises an anomaly. An event kind whose
-    authoritative record is the tray itself produces its own percept (2.1).
+    that bound passes without a match, the reference remains unresolved and raises an anomaly.
+
+    The announcement and the target can disagree. That requests a check under 9.2; the disagreement supplies no verdict.
+    "This message arrived" and "this reference is readable within the declared bound" are separate statements. A failed
+    resolution verdict requires a read within the check window, with the right access and scope, under a contract that
+    guaranteed the target stayed obtainable (12.8 §7). A visibility bound alone gives no retention guarantee. Without
+    evidence that tests those conditions, both statements remain unresolved and the check records the limit. A tested,
+    broken resolution promise is also a contract anomaly. It does not prove that the message never arrived.
+
+    An event kind whose authoritative record is the tray itself produces its own percept (2.1).
 
     **Catch-up is bounded by coverage, not by page one.** After a push, or when page one contains only previously unseen
     items, follow `more` until the previous observation boundary is reached, or use the manual's change cursor. The
@@ -644,7 +653,7 @@ independently of the executive. It determines when to look at each place using a
 information, and a small set of reflex triggers.
 
 **The change model.** For every place the agent has ever looked at, a regularity (4.11) holds a rate: how many changes
-per hour to expect there. The rate is learned by counting, the way facts are (9.2), and the form stays cheap:
+per hour to expect there. It keeps its own counts of changes and elapsed time, separate from source accuracy (9.2):
 
 ```text
 observation:  between two looks Δt hours apart, k distinct changes were seen in views (pushed or requested)
@@ -728,9 +737,10 @@ the change model plus the people model.
   its target. An inline view supplies that look without another call. Both use the same receptor and obey the same
   observation policy and coverage rules.
 
-**Reliability.** Each place keeps `r`, the share of its observed changes that push brought to perception on time. The
-scheduler matches reference announcements to target observations by `ref`, item id and version where supplied. A direct
-pushed view can establish the same match. A pointer or announcement alone does not count as a successful observation.
+**Timely observation coverage.** Each place keeps `r`, the share of its observed changes that push brought to perception
+on time. The scheduler matches reference announcements to target observations by `ref`, item id and version where
+supplied. A direct pushed view can establish the same match. A pointer or announcement alone does not count as a
+successful observation. `r` measures coverage, not whether a source's statements are accurate (9.2).
 
 Scheduled glances audit that share. Within the period and scope they cover, count each distinct change once in the
 denominator, including changes already found through push; the numerator counts those found through push within the
@@ -747,6 +757,12 @@ push reconciliation is needed: the observations share item identities, versions 
 The scheduler always checks at least once a day, within the owner's observation limits, because direct observations are
 needed to detect unreported changes. A reliable tool that stops announcing changes is also an anomaly (2.3 §4), with an
 arousal floor and a line in the why queue. The owner should be told even when more frequent glances compensate.
+
+**Accuracy and optional reads.** Reference-resolution outcomes from 9.2 help estimate the value of optional
+announcement-driven reads and batching. Repeated unresolved references can justify batching optional retries and
+reporting degraded service, even when the available evidence cannot support a failure verdict. Required reads,
+screening, pins and coverage floors still apply. An unresolved announcement that touches an action's basis still blocks
+that action under 8.1. A high average never excuses a contract violation.
 
 **Schedules, not only rates.** Some places do not have a rate; they have a schedule. The plan page changes on Mondays at
 10:00, the newsletter comes on Tuesdays, invoices arrive on the first of the month. An hourly rate bucket approximates
@@ -978,10 +994,13 @@ interrupt; and inside that, a question she may ask that teammate is a zoom, whic
 ### 3.7 Reconciliation
 
 A recalled fact and an attended percept can disagree. Memory says the standup is at 10:00; the calendar says it is at
-09:30 today. Attention does not pick a side. It records a `Conflict` in working memory, and the executive must resolve
-the conflict before acting on either: it can open or advance a `ChangeEvent` (13.9), distrust the percept, or ask.
-Conflicts are surprising by definition, so they also feed learning (Chapter 9). The conflict slot prevents the agent
-from acting on contradictory beliefs without resolving them.
+09:30 today. An announcement can also disagree with the target state Nia reads. Attention does not pick a side. It
+records a `Conflict` in working memory and requests a check (9.2). The executive must resolve the conflict before acting
+on either value: it can open or advance a `ChangeEvent` (13.9), read comparison evidence, or ask.
+
+A disagreement is not a verdict against either source. The check must test the same statement, scope and period.
+Conflicts are surprising by definition, but only the check's evidence can confirm or contradict a claim. The conflict
+slot prevents the agent from acting on contradictory beliefs without resolving them.
 
 **Find conflicts before ranking recall candidates.** Before recall ranks anything (4.6), it takes each attended percept
 and each item about to be recalled, and looks up every assertion with the same subject, the same attribute, and
@@ -1090,7 +1109,7 @@ type Assertion = {
     author?: EntityRef // authenticated; authority over the scope is checked when the instruction is stored (8.1)
     status?: 'active' | 'superseded' | 'expired'
     // report only
-    speaker?: EntityRef // who said it; a retraction is a second report, never an edit of the first
+    speaker?: EntityRef // the person, tool or model that supplied it; a retraction is a second report
     // inference only
     derivedFrom?: AssertionRef[] // re-derived when one of them changes (13.9)
     firstSeen: Date
@@ -1105,13 +1124,13 @@ type Support = { field: string } | { passage: string; context: string } // the p
 
 **Each of the five assertion kinds has its own update rule:**
 
-| Kind          | Example                                          | Has                                       | Moves by                                                                                                              |
-| :------------ | :----------------------------------------------- | :---------------------------------------- | :-------------------------------------------------------------------------------------------------------------------- |
-| `instruction` | Kam: forward supplier invoices                   | author, authority, scope, applies, status | its author, or someone with authority over its scope; **never by evidence**                                           |
-| `observation` | the calendar lists 10:00                         | `p`, observations with support            | independent observations that test it; a `ChangeEvent` (13.9)                                                         |
-| `report`      | Kam said the standup is at 10:00                 | speaker, time, what was said              | nothing moves it: it is a record of speech. It is **evidence for** an observation, weighted by the speaker's accuracy |
-| `inference`   | this standup is at 09:30 (from the reply thread) | the assertions it follows from            | it is re-derived when a premise changes                                                                               |
-| `regularity`  | standups usually start at 10:00                  | counts; lives in a pattern (4.11)         | counting; it is **never a claim about one instance**                                                                  |
+| Kind          | Example                                          | Has                                       | Moves by                                                                                                                        |
+| :------------ | :----------------------------------------------- | :---------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------ |
+| `instruction` | Kam: forward supplier invoices                   | author, authority, scope, applies, status | its author, or someone with authority over its scope; **never by evidence**                                                     |
+| `observation` | the calendar lists 10:00                         | `p`, observations with support            | independent observations that test it; a `ChangeEvent` (13.9)                                                                   |
+| `report`      | Kam said the standup is at 10:00                 | source, time, statement                   | nothing moves it: it records what the source supplied. It is **evidence for** an observation, weighted by source accuracy (9.2) |
+| `inference`   | this standup is at 09:30 (from the reply thread) | the assertions it follows from            | it is re-derived when a premise changes                                                                                         |
+| `regularity`  | standups usually start at 10:00                  | counts; lives in a pattern (4.11)         | counting; it is **never a claim about one instance**                                                                            |
 
 An instruction has **no `p`**. Instead it has an author with authority over its scope: the owner has authority over the
 agent, a team admin over team things, and a teammate over their own things. The authority is checked when the
@@ -1120,15 +1139,20 @@ applicability.** Within that overlap, the newer instruction from the same author
 authority wins. Two instructions in that overlap of incomparable authority, or of equal authority with no order between
 them, **block the affected action** and go to the owner as a question.
 
-**Authority governs instructions, not truth** (1.6 §12). The owner's statements about the world are reports. They carry
-a high calibrated accuracy (0.95 to start, 13.9), and they move beliefs through the same evidence rule as anyone else's
-statements. For most facts of the agent's own world one such statement is enough to settle a `ChangeEvent`; for a stable
-fact it is not, and the deliberation is shown both. When the owner wants something held regardless ("treat the capital
-as Lyon"), that is an instruction with a scope. It governs what the agent does and says, not `p`.
+**Authority governs instructions, not truth** (1.6 §12). The owner's statements about the world are reports. They
+support beliefs at once under the declared owner prior (9.2); Kam need not first earn belief through an audit. That
+prior is an assumption with a recorded origin and strength, not measured accuracy. Checks can revise it.
 
-A report is preserved as what was said. "Kam said X" does not become false when Kam retracts X. The retraction is a
-second report, and the belief about the world is updated from both. Two people repeating what one calendar says are one
-item of evidence.
+An owner report may explicitly settle an ordinary fact about Nia's own world, including a `ChangeEvent` (13.9). It
+remains evidence with uncertainty. Accepting the report is not a successful check of Kam. For a stable fact, one report
+does not settle the change, and deliberation sees both accounts. When the owner wants something held regardless ("treat
+the capital as Lyon"), that is an instruction with a scope. It governs what the agent does and says, not `p`, and it
+supplies no truth verdict.
+
+A report records what a source supplied. The source may be a person, a tool or a model; the tool that carried a
+statement is not necessarily its source (9.2). "Kam said X" does not become false when Kam retracts X. The retraction is
+a second report, and the belief about the world is updated from both. Two people repeating what one calendar says are
+one item of evidence.
 
 Semantic memory also stores three kinds of information often kept separately:
 
@@ -1659,10 +1683,9 @@ prior claim. The cutoff says nothing about when a particular claim was learned o
 it from above. A prior claim carries `verifiedAt: null`, and it carries the model id and its cutoff as metadata, not as
 a date. Two things decide what to do with a prior claim:
 
-- **Correctness is calibrated**, per claim kind and per model version: it is how often a prior claim of that kind, once
-  later observed, turned out to be right. The harness measures it on the scripted weeks, and live use keeps measuring
-  it. A stable kind with a high error rate is verified before use, however slowly the world changes. The model can be
-  wrong, not just stale.
+- **Correctness is calibrated** through the checks and accuracy rows of 9.2, by claim kind and model version. A stable
+  kind with a high error rate is verified before use, however slowly the world changes. The model can be wrong, not just
+  stale.
 - **Verification is required by stakes and by temporal sensitivity.** The action class and the attribute's change rate
   `λ` (4.11) say whether a read must come first. `irreversible` never rests on a prior claim. `outward` on a claim about
   a fast-changing attribute (who runs a company, what something costs, when the election is) reads first. A private note
@@ -1983,15 +2006,15 @@ drive's band allows it.
 A people model is an entity of kind `person` with reserved attributes. It is the agent's theory of mind about one
 person, and it lets communication fit that person.
 
-| Attribute    | What it holds                                        | Used by                                 |
-| :----------- | :--------------------------------------------------- | :-------------------------------------- |
-| proximity    | 0 to 1, from interactions (below)                    | actor weight in salience; whom to trust |
-| role         | owner, teammate, contact, stranger; team role if any | permissions, tone                       |
-| responseTime | typical time to reply, per channel                   | expectation deadlines, patience         |
-| hours        | timezone, working hours                              | when to send, when to expect            |
-| knows        | facts this person was told or authored               | not re-explaining; not leaking          |
-| prefers      | tone, channel, format, cadence of contact            | wording, when to check in               |
-| state        | last observed tone, expires in a day                 | wording                                 |
+| Attribute    | What it holds                                        | Used by                         |
+| :----------- | :--------------------------------------------------- | :------------------------------ |
+| proximity    | 0 to 1, from interactions (below)                    | actor weight in salience        |
+| role         | owner, teammate, contact, stranger; team role if any | permissions, tone               |
+| responseTime | typical time to reply, per channel                   | expectation deadlines, patience |
+| hours        | timezone, working hours                              | when to send, when to expect    |
+| knows        | facts this person was told or authored               | not re-explaining; not leaking  |
+| prefers      | tone, channel, format, cadence of contact            | wording, when to check in       |
+| state        | last observed tone, expires in a day                 | wording                         |
 
 Proximity is the brainstorm's formula, made computable:
 
@@ -2006,6 +2029,9 @@ proximity = 1 − e^(−S / 5)              saturating, so a score is earned ove
 For recent two-way exchanges of quality 1, five exchanges reach 0.63 and twenty reach 0.98; neutral exchanges (quality
 0.5) reach 0.39 and 0.86. The owner is pinned at 1. Teammates start at 0.5 from the roster, as a floor. For everyone
 else, proximity develops through interactions.
+
+Factual accuracy (9.2) is shown beside proximity, not inside it. A wrong scheduling report can lower that person's
+scheduling accuracy without changing their proximity or instruction authority. The salience formula (3.1) is unchanged.
 
 ### 6.6 Identity
 
@@ -2357,19 +2383,29 @@ These are the rules around the call:
   duration. Urgency shortens thinking; it never lowers a permission, skips an evidence check, or turns an unresolved
   precondition into a satisfied one. A required check on a plan node is the one exception to the cap: it spends from the
   execution reserve under 7.10 and positive slack does not bound it. What happens to a call in flight is in 8.5.
-- **Certainty of what it cites.** Items in working memory carry a certainty. Facts a view gave (a sender, an attachment,
-  a keyword in a subject line) are _certain_, since the tool reports what is true now (12.7). Facts from interpretation
-  (an intent, an ask) are _hypotheses_ until a focused read confirms them (2.3 §4). An action may depend on
-  hypothesis-level items only if its class is `read` or `write_private`. Anything `write_shared` or above must cite only
-  certain or confirmed items, and the runner (8.1) checks the citations' certainty the way it checks permissions. For
-  this rule, an assertion with a pending `ChangeEvent` (13.9) counts as a hypothesis; so does an observation whose
-  evidence is lost (5.2 §5); and a prior claim (4.12) is certain only where its verification rule allows. Forwarding an
-  invoice is allowed when the procedure uses a structural trigger (sender, attachment, keyword) and the item has passed
-  screening (2.3 §5). A summary of what the invoice asks, based on an interpretation, is not allowed. The draft check
-  (8.3) enforces this requirement for text. This rule is about **preconditions and authority**: what must be true for
-  the action to be allowed at all. A **predicted consequence** (7.6, 7.10) is a hypothesis by definition and never
-  satisfies it. A prediction may inform the choice between allowed actions; it may never stand in for an observed
-  precondition, and it may never be stated as a fact in anything the agent sends.
+- **Certainty of what it cites.** Nia knows which fields a view returned. Whether those fields describe the current
+  state is a statement with a scope and time, checked under 9.2 (12.7). A sender field, for example, records what the
+  mail tool returned; it does not make the sender's account of the world true. Facts from interpretation (an intent, an
+  ask) are _hypotheses_ until a focused read confirms the interpretation against its source (2.3 §4).
+
+    An action may depend on hypothesis-level items only if its class is `read` or `write_private`. Anything
+    `write_shared` or above must cite only certain or confirmed items, and the runner (8.1) checks the citations'
+    certainty the way it checks permissions. Confirmation must cover the statement the action needs. An ordinary fact
+    explicitly settled from a person's report under 4.2 and 13.9 does not also need a tool read merely because it came
+    from a person. Required verification still applies.
+
+    For this rule, an assertion with a pending `ChangeEvent` (13.9) counts as a hypothesis; so does an observation whose
+    evidence is lost (5.2 §5); and a prior claim (4.12) is certain only where its verification rule allows. Forwarding
+    an invoice can use a structural trigger whose fields are established in the required scope, once the item has passed
+    screening (2.3 §5). A summary of what the invoice asks cannot rest on an unconfirmed interpretation. The draft check
+    (8.3) enforces this requirement for text.
+
+    Deliberation uses the relevant source accuracy (9.2) to choose further checks. That number grants no permission,
+    removes no taint and waives no required check. This rule is about **preconditions and authority**: what must be true
+    for the action to be allowed at all. A **predicted consequence** (7.6, 7.10) is a hypothesis by definition and never
+    satisfies it. A prediction may inform the choice between allowed actions; it may never stand in for an observed
+    precondition, and it may never be stated as a fact in anything the agent sends.
+
 - **A plan is a proposal.** `plan` becomes the task's steps. Later steps are executed by procedures if one matches, and
   otherwise by short deliberations bounded to that step. The plan can be revised at any mismatch. When the task needs
   more than a few steps, or steps that depend on each other, the plan is kept as a durable `Plan` (7.10) that later
@@ -3288,12 +3324,183 @@ everything below.
 
 Observations are learned by counting the evidence that tests them. Confirmation in the tick (4.7) and extraction at
 night (5.2 §2) both add observations together with their support. What a person says is a **report** (4.2). A report is
-evidence for an observation, weighted by the speaker's calibrated accuracy (13.9). The owner's word usually settles a
-fact of the agent's own world, and even then it is still not `p = 1`, because authority is not truth (1.6 §12). A
-stranger's word is capped at 0.6 until a second independent item of evidence, or a read of the authoritative place,
-confirms it. What the owner _tells the agent to do_ is an **instruction**, and an instruction is not learned by counting
-at all. A contradiction does not overwrite what is already there. It opens a `ChangeEvent`, and if it stays pending on
-something that matters, it becomes a question.
+evidence for an observation, weighted by the source's accuracy as defined below. The owner's word usually settles a fact
+of the agent's own world, and even then it is still not `p = 1`, because authority is not truth (1.6 §12). What the
+owner _tells the agent to do_ is an **instruction**, and an instruction is not learned by counting at all. A
+contradiction does not overwrite what is already there. It opens a `ChangeEvent`, and if it stays pending on something
+that matters, it becomes a question.
+
+Nia learns how much to rely on a source's next statement by checking its earlier statements. The unit is a **testable
+statement Nia might rely on**, found inside an input. Not every input is a claim. An instruction, a question and a
+record of what a tool returned are not statements to check. Whether the returned value describes the world is a
+statement with a scope and applicable time.
+
+The engineering problem is that sources differ in accuracy and can improve or deteriorate. Learning the value of advice
+from outcomes is the brain analogy: Behrens, Hunt, Woolrich and Rushworth (2008) studied that process. It supports
+investigating learned reliance. It supplies none of the priors, count formulas or decay settings below. The harness
+experiment in 11.1 can reject them.
+
+**Checks.** Checks use the existing evidence records; their counts live as regularities. Nia creates checks for
+statements she relies on, open expectations and sampled claims. She need not extract every sentence.
+
+```typescript
+type Check = {
+    id: string
+    claim: string // identity of the distinct claim; copied reports retain the same claim
+    statement: string
+    item: { ref: ItemRef; version: string } // the input that supplied the statement
+    source: {
+        ref: EntityRef | ToolInstanceRef // whoever supplied the statement, not merely its carrier
+        toolVersion?: string
+        modelVersion?: string
+        stepVersion?: string // the extraction or compose step, when it supplied the statement
+    }
+    claimKind: string
+    scope: Scope
+    applies: TimeRange // the period the statement is about
+    at: Date // date of the claim being tested, used for decay; not the verdict's arrival time
+    test: string // identifies the distinct test of this claim
+    outcome: 'truth' | 'citation_support' | 'effect' | { named: string }
+    comparison: { evidence: EvidenceRef; coverage: string }[]
+    verdict: {
+        status: 'confirmed' | 'contradicted' | 'unresolved'
+        reason: string // what the evidence establishes, or what prevents a verdict
+    }
+    why: 'ordinary_work' | 'conflict' | 'independent_sampling'
+}
+```
+
+**The carrier is not the source.** The mail tool supplies the mailbox state. The sender supplies the message's factual
+claims. Nia's extraction step supplies an extracted date. An extraction mistake counts against that step, with the
+relevant model and step versions; it never lowers the sender's accuracy. A browser that carries a newsletter does not
+inherit the newsletter's successes.
+
+**A disagreement requests a check; it supplies no verdict.** A conflict (3.7) can expose a statement worth testing. It
+cannot tell which source was wrong. Accepting a report, rejecting a `ChangeEvent`, or following an owner instruction to
+use a value changes no source's accuracy. Using evidence and testing its source are different acts.
+
+Comparison evidence must match the statement's scope and period. A fresh read can contradict an old claim only if it
+establishes what was true when that claim applied. A stale calendar entry does not prove that a reported change was
+never agreed.
+
+The system-of-record declaration (12.8) identifies what a tool records, by field and scope; the configured role names
+the instance that serves this team. A calendar read can settle what is scheduled there. It cannot settle what the
+organiser intends or when the meeting actually happens. A person's direct report about their own preference, or the
+organiser's explicit confirmation, can supply relevant evidence for what no tool records. Sam answering an Acme message
+establishes that he answered; it does not alone establish that he is Acme's designated contact.
+
+**Same-tool evidence can test a statement about that tool's state.** Reading the target message can confirm its
+announcement. A view that merely repeats the announcement cannot. Both paths may share a failure, so their agreement
+does not independently confirm a claim about the wider world.
+
+**Count each distinct claim and test once.**
+
+- Repeated reads and copied reports add no trials.
+- A revised verdict replaces its earlier contribution.
+- Unresolved checks count as neither confirmed nor contradicted.
+- Checks and their supporting evidence stay live while their counts are used. They survive compaction under the
+  retention rules of 5.2.
+- Raw checks are kept for replay. The brief may group repeated failures, but their checks stay separate.
+
+**Accuracy is a mean.** For a binary tested outcome, use a Beta count:
+
+```text
+prior:       α₀ = assumed accuracy × prior strength
+             β₀ = (1 − assumed accuracy) × prior strength
+
+estimate:    a = (α₀ + confirmed) /
+                 (α₀ + β₀ + confirmed + contradicted)
+```
+
+This is the mean, not a lower credible bound. The bound in 4.3 remains the measure for procedure deployment.
+
+Keep separate rows by source, claim kind and tested outcome, with the relevant tool or model version. Truth and citation
+support never share a count. Add narrower context, such as a place or period, only when the evidence warrants it. A new
+tool or model version starts a new row. Old results remain context; they are not fresh successes.
+
+**Priors are declared assumptions.** Record each prior's origin, version and strength. These starting values are all
+defaults to test:
+
+| Source                 | Assumed accuracy                      | Prior strength, in checks |
+| :--------------------- | :------------------------------------ | :------------------------ |
+| Owner                  | 0.95                                  | 20                        |
+| Teammate               | 0.9                                   | 5                         |
+| Known contact          | 0.75                                  | 2                         |
+| Stranger               | 0.6                                   | 2                         |
+| Tool, for a claim kind | Mean supplied by the platform's trait | 5                         |
+
+The identity (6.6) holds the chosen assumptions for people. Platform trait definitions (8.8) supply the tool
+assumptions. A tool's manual cannot award itself a prior. The harness compares these assumptions with `Beta(1, 1)`.
+
+Kam's report about his own world supports a belief immediately under its prior and may explicitly settle an ordinary
+fact (4.2). That does not credit Kam with a successful check. His instruction governs behaviour and is never a truth
+verdict.
+
+**Decay follows elapsed time.** The candidate discounts learned counts with a 42-day half-life, a default to test. Date
+each contribution by the claim being tested, not by when its verdict arrived. A late or corrected verdict does not make
+an old claim fresh. The prior is not decayed.
+
+This means a quiet source drifts back toward its declared assumption. Its checks take over only when enough recent
+evidence exists. The harness must test that behaviour, especially when the owner prior outweighs sparse, decayed
+evidence.
+
+**Show what the number rests on.** Show prior strength apart from actual checks. Show unresolved and unchecked claims
+too. Until independently sampled checks support a broader reading, call the number **accuracy on checked claims**.
+Ordinary work and conflicts select which claims get checked; their results alone do not establish accuracy across
+everything the source says. Independent sampling remains available when a source scores poorly, so recovery and
+important true claims can still be found. Its rate is an open setting (11.5).
+
+**A missing reference makes two promises testable.** "This message arrived" and "this reference is readable within the
+declared bound" have different failure conditions. Record them as separate checks with separate tested outcomes.
+
+A failed reference-resolution check needs evidence that Nia read with the right access, scope and timing, under a
+contract that guaranteed the target would stay obtainable through the check window. A visibility bound alone does not
+guarantee retention. If Nia missed the window, access was lost, or deletion could have removed the target before she
+read, the absence does not establish either failure; the checks stay unresolved and record the limit.
+
+When those conditions were tested and the promise was broken, record a contradicted reference-resolution check and a
+contract anomaly. Historical arrival may still be unresolved without retained history. Never mix resolution failures
+into arrival accuracy. Repeated anomalies can justify batching optional retries and reporting degraded service even when
+the historical claim cannot be settled.
+
+**Readers of the number.**
+
+- `ChangeEvent` (13.9) uses the relevant learned accuracy in place of fixed source weights. Its likelihood ratio is an
+  approximation for ordering resolution, not a general truth model. Giving no directional weight when `a ≤ 0.5` is a
+  default to test. A poor source never becomes evidence for the opposite statement. Stakes and deadlines still require
+  attention.
+- Deliberation (7.5) and prior-knowledge verification (4.12) use the relevant accuracy to choose further checks.
+- The glance scheduler (2.9) uses reference-resolution outcomes to estimate the value of optional announcement-driven
+  reads and batching. Required reads, screening, pins, coverage floors and unresolved action-basis checks remain
+  binding.
+
+Keep `r` as timely observation coverage. Procedure reliability, simulator scores, durations and response times keep
+their own statistics. Proximity remains actor weight in salience, with factual accuracy shown beside it (6.5). The
+salience formula is unchanged.
+
+Accuracy grants no permission, removes no taint, waives no required draft check and selects no matrix column. A contract
+violation needs its response even when the source's average is high. Report material failures, persistent service
+problems and meaningful changes in reliance, not every crossing below a prior.
+
+**Examples.**
+
+- **The mail tool announces a missing message.** An empty first page establishes nothing about that reference. Nia
+  follows it. If the contract guarantees direct access through the check window and a timely, authorised read returns a
+  definitive missing result after the visibility bound, the resolution check fails. The contract failure is reported,
+  and future optional announcement-driven reads lose expected value. Without retained history, arrival may remain
+  unresolved. Without a usable retention guarantee, even the resolution failure may be untestable.
+- **Kam says the standup moved.** His report supports the scheduling belief at once and can explicitly settle it. Nia
+  records Kam as the source without crediting him with a successful accuracy check. If the calendar disagrees, she keeps
+  what it lists distinct from what Kam says was agreed.
+- **A teammate gives the wrong time.** The old calendar entry alone proves no error. The organiser later confirms that
+  the reported change was never agreed, for the same meeting and period. That evidence can contradict the teammate's
+  report. Their scheduling accuracy falls; proximity and instruction authority stay unchanged.
+- **A newsletter reports a capital change.** In the scripted case, an official record establishes the capital and its
+  effective date. Nia updates the belief and credits the newsletter's matching claim. The browser carried the evidence;
+  it gets no newsletter success.
+- **Nia's draft adds an unsupported date.** The cited material does not support it. Record a citation-support failure
+  against the relevant model and compose version, and return the draft for repair. Whether the date happens to be true
+  is a separate question.
 
 ### 9.3 Repetition: procedures
 
@@ -3688,6 +3895,28 @@ forbidden action. One regression case guards the budget arithmetic: a task with 
 execution reserve left. The required check must run, its allowance must be counted once, and an optional search must be
 refused. The same case with too little budget must leave the node unready and ask the owner.
 
+**Learning how much to rely on a source** (9.2). Compare fixed source defaults with learned accuracy on the same
+workload. Within learned accuracy, compare declared role priors with `Beta(1, 1)`. Test elapsed-time decay and
+independent spot checks separately. Hold capabilities, observation budgets, permissions and required checks equal.
+
+The scripts include:
+
+- cold-start owner reports with no external record, and mistaken owner reports;
+- sources that deteriorate and recover, and sources whose accuracy differs by claim kind;
+- quiet sources with sparse, decayed evidence, to test their return toward the fixed prior;
+- stale calendars, copied reports, extraction errors, and shared failures in announcement and view paths;
+- delayed verdicts and corrected verdicts;
+- phantom mail announcements against real arrivals followed by deletion, varying retained history, retention guarantees,
+  access loss and whether Nia checked in time.
+
+Measure false beliefs and their duration, wrong check verdicts, needless reads, true claims missed or delayed,
+unresolved work, and calibration on independently sampled claims. Include human time and verification cost. The harness
+supplies the truth; Nia's accepted beliefs never supply evaluation labels.
+
+Reject a configuration that saves calls by missing work, punishes correct sources, or fails this section's completion
+and timeliness requirements in any stratum. Reject decay or sampling separately if its added cost buys no improvement.
+Choose settings on validation scripts and report the frozen result on held-out scripts.
+
 ### 11.2 Milestones
 
 Each milestone consists of a small series of PRs in eldon3, with corresponding PRs in h for any required framework
@@ -3834,6 +4063,13 @@ arithmetic (4.5, 5.4), the reward scales (9.4), the runner's duties (8.1), and f
   to measure is the cost of catch-up, the tray's retention window, retry timing within declared visibility bounds, and
   the amount of audit history needed for a useful per-place `r`. Missing source history remains a declared coverage gap;
   no scheduler setting can recover it.
+- **Source accuracy** (9.2): prior means and strengths, decay, the independent sampling rate, the evidence needed for
+  narrower context, and the rule giving no directional weight at `a ≤ 0.5` are defaults to test. The owner prior's
+  strength needs particular scrutiny against sparse, decayed evidence. Natural-language checks need measured error
+  rates: can they distinguish contradiction from missing support, and changed circumstances from an earlier false
+  report? What must a reference announcement guarantee about retrievability after posting? A visibility bound without a
+  usable read window cannot support a failure verdict. How often are system-of-record declarations and comparison reads
+  wrong in practice? These questions belong in the harness experiment (11.1).
 
 ### 11.6 Decisions from the second review: tools
 
@@ -3954,6 +4190,16 @@ repeating settled discussions while allowing any proposal to be reconsidered if 
 | Score both a reference announcement and the item it announces                    | One occurrence would gain attention and habituation twice. Link the announcement to the target and score the target once                                        | 2.1, 2.6        |
 | Suppress every tray item from attention                                          | Some transient occurrences exist only as tray records. Those records must produce percepts themselves                                                           | 2.1, 11.17      |
 | Stop catch-up at any familiar item, or treat absence from a page as removal      | Neither proves coverage. The stopping boundary needs an ordering guarantee; removal needs complete comparable coverage or explicit history                      | 2.3 §1, 12.8 §7 |
+| A notification-only accuracy score                                               | The unit is a testable statement inside any input Nia might rely on; notifications need no separate estimator                                                   | 9.2             |
+| A single trust score per source                                                  | Accuracy differs by claim kind and tested outcome; truth and citation support must not share a count                                                            | 9.2             |
+| One estimator for every learned quantity                                         | Source accuracy, procedure reliability, simulator scores, durations, response times and coverage answer different questions                                     | 9.2             |
+| Disagreement, acceptance or rejection as a source verdict                        | A decision cannot manufacture its own confirmation; a check needs evidence that tests the statement                                                             | 3.7, 9.2, 13.9  |
+| A missed deadline proves an earlier event never happened                         | A tested bounded promise can fail while historical arrival remains unresolved                                                                                   | 9.2, 12.8 §7    |
+| Automatically distrust an unfamiliar owner                                       | Owner reports support beliefs immediately under a declared prior; Kam need not first pass an audit                                                              | 4.2, 9.2        |
+| Present role priors as measured accuracy                                         | They are assumptions with recorded origin, version and strength, shown apart from actual checks                                                                 | 9.2             |
+| A lower credible bound as factual accuracy                                       | Source accuracy uses the Beta mean; the lower bound remains for procedure deployment                                                                            | 9.2, 4.3        |
+| Stop checking a source once it scores poorly                                     | Recovery and important true claims must remain discoverable                                                                                                     | 9.2, 11.1       |
+| Report every crossing below a prior                                              | Report material failures, persistent service problems and meaningful changes in reliance                                                                        | 9.2             |
 
 ### 11.10 Decisions from the fifth round: what comes to mind
 
@@ -4215,6 +4461,53 @@ Like round nine, this used a direct review and writing process rather than the u
     blocks execution. Tests cover duplicate pushes, paging, stale pointers, transient events, missing history and
     observation during deliberation. These are the implementation consequences of the single-shape decision.
 
+### 11.18 Decisions from the thirteenth round: learning how much to rely on a source
+
+Kam asked whether Nia records an announcement that conflicts with its target as a conflict, learns the tool's
+reliability from such cases, and where the design does that. The assistant first proposed a per-place number `q` in 2.9.
+Kam rejected it as too specific and tied to notifications. The assistant and Codex worked through two rounds and settled
+the design below. Kam asked that the changes stay true to that agreement. As in rounds nine and twelve, Codex wrote the
+changes.
+
+1. **The unit is a testable statement Nia might rely on** (9.2). Codex supplied this boundary and the distinction
+   between carrier and source. A message can contain claims without every input being a claim. The mail tool supplies
+   mailbox state, the sender supplies their account of the world, and an extraction step owns its mistakes.
+2. **A disagreement requests a check** (3.7, 9.2). Codex required evidence for a verdict. Accepting a report, rejecting
+   a `ChangeEvent`, or following an instruction does not score a source. Both agreed on checks that retain the
+   statement, source, version, scope, period, tested outcome, comparison coverage, verdict, reason and reason for
+   checking. Each distinct claim and test counts once; revised verdicts replace their contributions; supporting evidence
+   survives compaction.
+3. **Role priors are declared assumptions with strength** (4.2, 9.2). The assistant proposed them, and Codex accepted
+   them on that basis. Kam's reports can support beliefs immediately without turning acceptance into successful checks
+   of Kam. Identity holds people assumptions; platform traits hold tool assumptions. Origin and version are recorded,
+   and the prior is shown apart from actual checks.
+4. **Accuracy uses the mean, not the bound** (9.2). Codex made this distinction from procedure deployment (4.3). Both
+   agreed on separate rows by source, claim kind, tested outcome and relevant version; elapsed-time decay of learned
+   counts; a fixed prior; retained raw checks; and independent sampling. The display says "accuracy on checked claims"
+   until sampled checks support a broader reading. The defaults remain experiments.
+5. **The tool's own state can test its announcement** (9.2). The assistant proposed this check. Codex accepted it with
+   the limit that reading the target tests the state claim, while a view that repeats the announcement does not.
+   Agreement between paths of one tool is not independent evidence about the wider world.
+6. **System of record has a field and scope** (12.8). The assistant proposed the declaration; both agreed on its limits.
+   The manual says what the tool records, and the configured role names the team's instance. A calendar lists a
+   schedule; it does not establish the organiser's intent or the meeting's actual time.
+7. **A missing reference involves two promises** (2.3 §1, 9.2, 12.8 §7). Codex distinguished historical arrival from
+   bounded retrievability. A resolution failure needs a timely read with access under a usable retention guarantee.
+   Otherwise the checks record what remains unresolved. Both agreed that a failed resolution check is also a contract
+   anomaly and can guide optional reads, without entering arrival accuracy.
+8. **Readers and boundaries stay explicit** (2.9, 6.5, 7.5, 13.9). Both agreed that learned accuracy replaces fixed
+   source weights in change resolution and helps choose further checks. It can guide optional announcement reads and
+   batching. It grants no permission and waives no required check. Coverage `r`, procedure reliability and the other
+   statistics remain separate. Proximity remains actor weight in salience.
+9. **The essential scope includes the certainty corrections** (7.5, 12.7). Codex identified these alongside the
+   mechanism and its readers. Returned fields are known as returned; their truth about the world has a scope and time. A
+   fact legitimately settled from a person's report does not always need a tool read. An owner report is recorded as a
+   report in `resolvedBy`, never as an instruction.
+10. **The harness can reject the mechanism and its parts** (1.1, 11.1). Both agreed on fixed defaults against learned
+    accuracy, role priors against `Beta(1, 1)`, and separate tests of decay and sampling. The harness supplies truth.
+    Missing work or punishing correct sources cannot count as efficiency. Open settings and contract questions are in
+    11.5; rejected alternatives are in 11.9.
+
 ---
 
 ## 12. Space and navigation
@@ -4384,19 +4677,21 @@ has its own section because it has its own use.
 
 ### 12.7 Provided and inferred
 
-| The tool provides (true now)                                                         | The agent infers (probable, learned, decays)                                                 |
+| The tool provides (returned values and declared guarantees)                          | The agent infers (probable, learned, decays)                                                 |
 | :----------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------- |
 | the current view: item ids, typed fields, versions, order, regions, boxes, moves     | the map: containment and links across views                                                  |
 | stable place ids and parents                                                         | paths: which moves get where, compiled into procedures                                       |
 | the conditions the trait names (other editors, motion)                               | change rates per place and per condition (2.9)                                               |
 | the completion signal of each move and operation                                     | where things usually are, and scan paths                                                     |
 | the canonical-id rule, the page size, the frame                                      | which places matter: value of knowing (2.9), goal relevance                                  |
-| coverage, history and cursor guarantees, with any gaps declared                      | the tool's reliability per place (2.9)                                                       |
+| coverage, history and cursor guarantees, with any gaps declared                      | timely observation coverage `r` per place (2.9)                                              |
 | tray items with occurrence ids, target references and times; declared version pushes | what an announcement means, whether its target was observed, and whether it merits attention |
+| statements in returned items, with their sources, scopes and times                   | accuracy on checked claims, by source, claim kind and tested outcome (9.2)                   |
 
 The tool is never asked for meaning, importance, routes or rates. The agent is never asked to guess structure that the
-tool could have stated. Metadata can change: the tool reports the current state, while the agent maintains and updates
-probability distributions over its learned beliefs.
+tool could have stated. Nia knows what the tool returned. Whether it describes current state is a statement with a scope
+and time, checked under 9.2. Typed fields and declared guarantees do not make a tool infallible. The agent maintains and
+updates probability distributions over its learned beliefs.
 
 ### 12.8 The contract
 
@@ -4422,12 +4717,27 @@ A conforming tool provides, per trait place kind:
    cursor, its retention window and expiry behaviour, separately from the next-page cursor. If catch-up may stop at the
    first unchanged known item, the manual must guarantee that nothing new can lie beyond that boundary. Otherwise it
    provides a change cursor or requires a complete scan. It also declares how versions are ordered, which places can
-   push views or pointers, and how long a referenced change may take to become readable. Current state without history,
-   inconsistent paging and expired cursors are visible coverage gaps (2.9).
+   push views or pointers, and how long a referenced change may take to become readable.
+
+    For reference announcements, the manual also states whether, and for how long, the target is guaranteed to remain
+    obtainable after posting. It names the read path, required access and scope, and the effects of deletion and
+    retention expiry. A visibility bound alone does not guarantee a usable read window. If there is no such guarantee,
+    that limit is explicit. These terms determine whether a missing reference can receive a failure verdict under 9.2.
+    Current state without history, inconsistent paging and expired cursors are visible coverage gaps (2.9).
+
 8. **Conformance:** the tool passes the trait's suite (8.8): a `read` changes nothing; ids survive a second view; fields
    match their schemas; versions and coverage mean what the manual says; the `more` move reaches the end; a declared
    move never writes. The suite also checks tray posting, reference resolution and recovery after repeated or delayed
    pushes.
+
+**System of record.** The manual declares, per field and scope, what the tool records. The configured role (8.8) names
+which instance serves this team. Together they identify the place Nia can read for that recorded state. A tool cannot
+appoint itself authoritative for unrelated facts.
+
+A calendar read can settle what is scheduled in that calendar, within the read's scope and period. It does not establish
+what the organiser intends or when the meeting actually happens. For facts no tool records, a person's direct report
+about their own preference or the organiser's confirmation can be relevant evidence (9.2). The declaration and the
+comparison read can themselves be wrong; the harness measures those errors (11.1).
 
 **The browser is the reference tool.** Its view _is_ the accessibility tree. Roles become item kinds, the DOM order
 becomes `order`, landmarks (header, navigation, main, footer) become regions, and layout boxes become `box`. Links are
@@ -4653,7 +4963,7 @@ type ChangeEvent = {
     from: unknown // the value that was current
     to: unknown // the value observed instead
     at: { from: Date; to: Date; grain: Grain } // the window in which it may have happened (13.3); narrows with evidence
-    p: number // how likely the world really moved, under the binary model below; it orders resolution and never accepts
+    p: number // the approximation below; orders resolution and never accepts an event
     evidence: {
         for: { at: Date; evidence: EvidenceRef; accuracy: number }[] // observations of `to` after the window opened; one per item of evidence
         against: { at: Date; evidence: EvidenceRef; accuracy: number }[] // observations of `from` after the window opened
@@ -4664,7 +4974,7 @@ type ChangeEvent = {
     resolvedBy?:
         | { kind: 'read'; evidence: EvidenceRef }
         | { kind: 'deliberation'; episode: EpisodeRef }
-        | { kind: 'owner'; instruction: InstructionRef }
+        | { kind: 'owner'; report: AssertionRef } // a factual report under 4.2, never an instruction
 }
 ```
 
@@ -4677,7 +4987,9 @@ and no event opens on the general assertion. Only an observation of the same sub
 advances a `ChangeEvent`. A contradiction is not assumed to be change.
 
 **Initial probability and evidence updates.** An event opens on the first contradicting observation (4.7 in the tick,
-5.2 §2 at night). Its probability comes from the attribute's change rate and the sources' calibrated accuracy:
+5.2 §2 at night). Its probability comes from the attribute's change rate and the relevant source accuracy from 9.2. That
+learned mean replaces fixed source weights. Use the row for the source, claim kind and truth outcome, with the relevant
+version. Before checks, the number rests on its declared prior; it is not yet measured accuracy.
 
 ```text
 prior          P(H) = 1 − e^(−λ · Δt)         λ the attribute's change rate, a regularity learned like a place's (4.11, 2.9):
@@ -4686,51 +4998,65 @@ prior          P(H) = 1 − e^(−λ · Δt)         λ the attribute's change r
 likelihoods    P(sees to | H) = a        P(sees to | ¬H) = 1 − a       an observation of the new value, accuracy a
                P(sees from | H) = 1 − a  P(sees from | ¬H) = a         an observation of the old value, after the window opened
 update         posterior odds = prior odds · Π over independent items of evidence of the likelihood ratio
-               ratio = a / (1 − a) for `to`,  (1 − a) / a for `from`;   one item of evidence counts once (1.6 §11)
-accuracy a     owner 0.95, teammate 0.9, known contact 0.75, stranger or a single read 0.6; all calibrated against
-               later observations (4.12)
+               when a > 0.5: ratio = a / (1 − a) for `to`, (1 − a) / a for `from`
+               when a ≤ 0.5: ratio = 1; no directional weight
+               one item of evidence counts once (1.6 §11)
+accuracy a     the relevant mean from 9.2, with its prior and actual checks shown separately
 ```
 
-This **binary** model is valid only under two assumptions: that the baseline was right (so that `¬H` means "the new
-observation is wrong"), and that exactly two values are in play. Neither is guaranteed. The old belief may already have
-been wrong while the new observation is right, and a third value may turn up. So the calculations are illustrations,
-with those assumptions stated. **`p` determines resolution priority; it cannot accept an event.**
+This **binary** model is an approximation for ordering resolution, not a general truth model. It assumes that the
+baseline was right, so `¬H` means "the new observation is wrong", and that exactly two values are in play. Neither is
+guaranteed. The old belief may already have been wrong while the new observation is right, and a third value may turn
+up. **`p` determines resolution priority; it cannot accept an event.**
 
-Under these assumptions, the examples give the following results. A live score (prior 0.99, one read at 0.6) gives
-0.993. A standup a week after its last confirmation (prior 0.2, a teammate's calendar entry at 0.9) gives 0.692, and a
-second independent entry takes it to 0.953. A capital (prior 0.001, a newsletter at 0.6) gives 0.0015, and a second
-newsletter 0.0022, reflecting the intended resistance to changing a stable fact on the basis of two mediocre sources.
+Giving no directional weight when `a ≤ 0.5` is a default to test. A poor source never counts as evidence for the
+opposite statement. Low accuracy does not remove the need to check an important claim or meet a deadline.
+
+Under the binary assumptions, illustrative accuracies give these results. A live score with prior 0.99 and a read whose
+relevant accuracy is 0.6 gives 0.993. A standup with prior 0.2 and a report at 0.9 gives 0.692; a second independent
+report at 0.9 takes it to 0.953. A capital with prior 0.001 and a newsletter at 0.6 gives 0.0015; a second independent
+newsletter at 0.6 gives 0.0022. These are examples of the arithmetic, not fixed weights for those sources. Copied
+reports add no evidence.
 
 **Accepted only by an explicit act.** General acceptance uses explicit scoped conflict resolution unless an exhaustive
 model with likelihoods for every possible observation, including the possibility that the baseline was already wrong, is
 supplied; none is, and the first implementation does not attempt one. An event is **accepted** by one of three acts, and
 the act is recorded in `resolvedBy`:
 
-- a **read of the authoritative place** for the attribute, made by the agent itself (the calendar for the standup, the
-  contract for the terms, the score page for the score). Its observation replaces both the baseline and the
-  contradictory value, resolving the possibility that the baseline was already wrong through direct evidence;
-- a **deliberation** that names which scoped observations it accepts and why, citing them, within the certainty rule
-  (7.5): an outward action may not rest on it until the read above has happened;
-- the **owner**, through the why queue or a direct statement, which is an instruction with a scope (4.2).
+- a **read of the system of record** for the field and scope (12.8), using the configured instance. Its evidence must
+  cover the period being resolved. A calendar can settle what it lists, not what the organiser intended or when the
+  meeting happened. A fresh read does not refute an earlier claim unless it establishes what was true then;
+- a **deliberation** that names which scoped evidence it accepts and why, citing it, within the certainty rule (7.5). A
+  person's report can supply that evidence where appropriate. There is no blanket requirement for an additional tool
+  read when the fact has legitimately been settled from a report;
+- an **owner report** that explicitly settles an ordinary fact about Nia's world under 4.2, through the why queue or a
+  direct statement. It is recorded as a report and remains evidence with uncertainty.
+
+An owner instruction governs behaviour. It is never a truth verdict. Accepting a report or settling an event gives no
+source a successful accuracy check; that needs a check under 9.2. Required verification and the runner's action-basis
+check remain binding.
 
 At acceptance the old value gets its `until` window and the new value gets `since` (13.3). The event becomes a record on
 the timeline at its grain, with its cause, and that record is where "when did the standup move" is answered from.
 
-**Resolution priority.** `p` determines **how urgently an event needs resolution**. `urgency = p · (0.5 + 0.5 · stakes)`
-puts the authoritative place at the top of the glance queue (2.9), decides whether the assertion is marked stale in a
-rendering now, and decides whether the why queue carries it tonight. In use it looks like this. The live score was
-_already_ an authoritative read by the agent, so it is accepted by the first act the moment it is observed, and the
-number only confirms there is nothing to wait for. The standup at 0.692 sends a glance to the calendar, whose read
-settles it. The capital at 0.0015 is rendered as "a change is reported" and waits for idle mode's curiosity or the
-owner.
+**Resolution priority.** `urgency = p · (0.5 + 0.5 · stakes)` orders resolution work. It helps choose a read of the
+relevant record (2.9), whether the assertion is marked stale in a rendering now, and whether the why queue carries it
+tonight. Stakes and deadlines still demand attention when `p` is low.
+
+For the examples above, a score read can already settle the score if its evidence covers the match and period. A standup
+conflict can send a glance to the calendar to establish what it lists; an organiser's confirmation may be needed to
+establish what was agreed. A capital report with no immediate stakes or deadline can wait for idle mode's curiosity or
+an owner question. The number orders the work; it does not decide which evidence settles it.
 
 **Pending events change behaviour before they are settled.**
 
 - Wherever the assertion is rendered, the pending event renders beside it: "Paris (a change to Lyon is reported, 0.02,
   two sources)". The deliberation sees both.
 - The certainty rule (7.5) and the draft check (8.3) treat an assertion with **any** pending event as a hypothesis. An
-  outward action that depends on it reads first, which is also the first act of resolution.
-- A pending event with stakes above 0.5 goes to the why queue (5.2 §4) with the place the agent would read to settle it.
+  outward action that depends on it must first resolve it with evidence covering the needed statement, scope and period.
+  A tool read is required when that is the evidence needed, not for every fact a person can legitimately settle.
+- A pending event with stakes above 0.5 goes to the why queue (5.2 §4) with the evidence needed to settle it: the place
+  Nia would read, or the person whose report could answer the question.
 
 **Accepted events propagate.** A dependents index lists the inferences derived from this assertion, the procedures whose
 preconditions name the old value, and the expectations and cycles built on it. It marks each dependent _needs
@@ -4741,15 +5067,17 @@ dependency index implements the reconsolidation cascade.
 `cause` is still empty after a day becomes a question for the brief. Until it is answered, the assertion carries a
 guard-like caution: any deliberation that relies on it is told that the change remains unexplained.
 
-**Rejected events are kept.** An event settled against the change (the authoritative read showed the old value) is
-`rejected`, not deleted. So when the same stranger makes a claim next week, it opens against a record of having been
-wrong, and the source's calibrated accuracy falls.
+**Rejected events are kept.** An event settled against the change is `rejected`, not deleted. Rejection alone does not
+lower any source's accuracy. The comparison evidence may also settle a check under 9.2, but only if it tests that
+source's statement in the same scope and period. A record that now shows the old value does not, by itself, prove that
+an earlier report was false.
 
-**Paris, then Lyon.** A newsletter mentions that the capital has moved. Nia holds Paris as a prior row (4.12), never
-verified. `λ` for `capital_of` is near zero and a newsletter's accuracy is 0.6, so `p ≈ 0.0015`. The event exists, it
-renders beside the row, and nothing else happens. Two days later a government page that she reads for another reason
-says Lyon. That page is the authoritative place for the attribute, the read is her own, and so the event is accepted by
-the first act. `cause` is empty, so the brief asks Kam why. From then on Nia says Lyon and cites the assertion; the
-model's weights, which still say Paris, are overruled by what she is shown. Had the second source been another
-newsletter, `p` would have reached 0.0022 and she would still say Paris, with the reported change beside it, until she
-or Kam looked.
+**Paris, then Lyon.** In the scripted case, a newsletter mentions that the capital has moved. Nia holds Paris as a prior
+row (4.12), never verified. With the illustrative prior and accuracy above, `p ≈ 0.0015`. The event renders beside the
+row. Two days later an official record she reads establishes Lyon as the capital and supplies the effective date. That
+evidence settles the event and confirms the newsletter's matching claim in a separate check. The newsletter gets that
+success; the browser that carried the record does not.
+
+If `cause` remains empty, the brief asks Kam why. From then on Nia says Lyon and cites the assertion; the model's
+weights, which still say Paris, are overruled by what she is shown. Another independent newsletter alone would raise the
+illustrative `p` to 0.0022 without automatically settling the event. A copy of the first report would add nothing.
