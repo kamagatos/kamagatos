@@ -42,8 +42,6 @@
 
     The time decay should also be dynamically computed.
 
-8. Is working memory kept in between ticks? What's the cost of re-computing it for every tick?
-
 ## Resolved
 
 8. Knowledge Graph
@@ -55,3 +53,9 @@
     **Answer:** `abe_design.md` 4.5 (activation and relevance as two numbers, fan-quietened cues, admission by
     relevance), 4.6 (budgeted spreading, scoped text pass, neighbourhoods, `broaden`), 11.1 (the interference test),
     11.16 (the decisions).
+
+9. Is working memory kept in between ticks? What's the cost of re-computing it for every tick?
+
+    **Answer:** `abe_design.md` 1.4 (the tick as a bounded update to retained state), 3.4 (the checkpoint in
+    `AgentState`), 4.6 (recall refreshes when its inputs change), 7.3 and 7.4 (one foreground choice, bounded chaining),
+    8.5 and 10.3 (running steps, wake-up, the loop's lifetime), 11.19 (the decisions).
