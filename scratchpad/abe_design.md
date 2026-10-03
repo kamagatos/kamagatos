@@ -334,16 +334,23 @@ devices. Each tool exposes places, renders their state as views, and provides ca
 the chat Kam uses to talk to her, and a robot vacuum are all tools. Observation and action belong to the same tool but
 remain separate in the tick because they require different permissions. This chapter covers observation.
 
-State is hierarchical. At the mail root, `mail:list` returns a page such as
-`{ mails: [{ id, title, status, sender }], page: 1 }`. The tool renders that page as the inbox's `View`: headers are
-items, their values are typed fields, and `more` leads to the next page (12.3). `mail:open(id)` is the `navigable:open`
-move into the mail, where its content becomes visible (12.4). The hierarchy exists before Nia explores it. A view
-exposes only the place and portion she is observing.
+State is hierarchical. For example, the root of a mail tool could return a page such as:
 
-**The notification tray.** Nia owns one notification tool, part of her body (6.7). Every installed tool connects to it
-and can post items under `notifications/<instance>`. Each such place has its own view, history and durable cursor. The
-notification tool pushes a new state version when items arrive. It can inline a small view or send a version pointer
-that the receptor reads. These are the same observations as those returned by a glance.
+```typescript
+{
+    mails: [{ id, title, status, sender }],
+    page: 1
+}
+```
+
+The tool renders that page as the inbox's `View` (12.3): each header is an item with typed fields, and the `more` move
+leads to the next page. `open(id)` is the move into a mail, where its content becomes visible (12.4). Writes such as
+`archive(id)` are operations, not moves. A view exposes only the place and portion she is observing.
+
+**The notification tray.** Nia owns one notification tool (6.7). Every installed tool connects to it and can post items
+under `notifications/<instance>`. Each such place has its own view, history and durable cursor. When a tool posts an
+item, the tray tells Nia at once instead of waiting for her next glance. It can inline a small view or send a version
+pointer that the receptor reads. These are the same observations as those returned by a glance.
 
 A notification in the tray is an item like any other, such as a mail header. Each one has:
 
