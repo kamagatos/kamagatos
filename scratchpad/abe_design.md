@@ -63,6 +63,12 @@ The design follows the brain's **organisation**: how it divides responsibilities
 work, and forgets information. Each of these choices addresses a problem the agent also faces. The design does not
 simulate neurons.
 
+The runtime experiment also tests **awaited results**: completions that a registered task step is waiting for, under the
+qualification in 1.4. An **additional start** is a tick started by an awaited result before the next cadence boundary.
+An **ordinary start** is a tick started at a cadence boundary or by an ordinary wake from idleness. The search
+experiment tests **simulation search**, the existing search over a simulator, and **live search**, a bounded
+read-and-decide run over a tool (7.10). The runtime and search comparisons run separately and together (11.1).
+
 | Brain trait                                            | Problem it solves for us                                                                | Experiment that would reject it (11.1)                                                                                                                                                                                                                                                                               |
 | :----------------------------------------------------- | :-------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Continuous sensing with limited attention              | Being always on is cheap; only a few things ever reach the LLM                          | Learned attention misses more obligations than screening everything would at the same cost                                                                                                                                                                                                                           |
@@ -142,9 +148,35 @@ A tick is a bounded update to retained state. Working memory survives ordinary t
 (3.4). Tasks own the frames, scratch, plans and lasting conflicts that it points at. The world advances independently:
 observations accumulate while Nia thinks, waits or is offline.
 
-The starting defaults to test are **one second of control work** and **active tick starts five seconds apart**. The
-budget and cadence are separate. Starts are scheduled from the cadence, not by waiting after the previous tick ends. A
-missed start is recorded; empty ticks are not replayed to catch up. Ticks never overlap.
+**Cadence is the floor for stimuli from outside, not the ceiling for the agent's own work.** There is one tick at a time
+under the agent lease. Every start needs an execution slot and a shared team start permit, obeys the control budget and
+runs the full tick protocol. Ticks never overlap.
+
+The starting defaults to test remain **one second of control work** and **five seconds between ordinary cadence
+boundaries**. The budget and cadence are separate: the control budget is a maximum duration, not a rate limit. Ordinary
+starts are scheduled from the cadence grid, not by waiting after the previous tick ends. An awaited result makes the
+next tick eligible without waiting for the boundary. Capacity, permits, database access and a running tick can still
+delay its start.
+
+A completion qualifies only when a durable dependency identifies the task step waiting for that run and still belongs to
+the applicable task revision. Deliberation, an operation, a required check and the final result of a live search can
+qualify. Failure, cancellation or an `unknown` outcome can qualify when the waiting step must handle it. Background
+glances, screening, interpretation and chunking do not qualify merely because Nia dispatched them. An executable task
+dependency must explicitly register a waiter. Reusing an adequate background read may attach that waiter atomically. An
+external reply remains an external observation even when a task awaits it.
+
+The runtime records the destination, dependency generation and wake disposition durably. The completion transaction
+checks the registration; a tool payload or model output cannot select the wake cause. An internal live-search result
+wakes its parent executor, not the agent's tick gate. An obsolete result stays recorded without continuation privilege.
+A valid independently owned run does not become obsolete merely because the agent lease changed (10.3).
+
+An additional start leaves the ordinary cadence grid unchanged. Ordinary wakes alone cannot create additional starts,
+but an additional tick processes available outside observations too. It still runs attention and scheduling; the task
+whose result enabled the tick need not win selection. Owner input, due timers and required perception retain their
+reserved processing capacity. Actual sleep keeps its checkpoint and interruption rules (3.2, 5.1, 7.2).
+
+The runtime records served and missed cadence boundaries without replaying empty ticks (10.3). The plan specifies
+durable wake generations, result-transition deduplication and the unchanged-grid accounting.
 
 The tick's own work is code. It reserves time for saving progress and stops admitting work before that reserve is spent.
 Large computations are split into resumable pieces. A stalled database can still cause an overrun; the trace records it.
@@ -256,9 +288,14 @@ flight as a running step. The tick does not wait for it.
 The invoice is still in working memory. When the plan is done, the executive picks the next task, and the invoice
 procedure ("forward supplier invoices to Kam with a one-line summary") is the likely winner.
 
-The invoice's accepted obligation survives even if the invoice is later evicted from working memory. The calendar glance
-remains in flight at 09:12:05, so that tick reuses it. It finishes at 09:12:12. The 09:12:15 tick consumes its result.
-Completion and consumption have separate timestamps.
+The invoice's accepted obligation survives even if the invoice is later evicted from working memory. At 09:12:05, a
+later plan step dispatches a required check and registers its waiter. Its result arrives at 09:12:07 and makes an
+additional tick eligible without waiting for 09:12:10. In this example, the tick starts at 09:12:07 and closes at
+09:12:08; the next ordinary boundary stays 09:12:10. Attention and scheduling still decide which task continues.
+
+The calendar glance remains in flight at 09:12:05, so that tick reuses it. It finishes at 09:12:12. No task step has
+registered a waiter for it, so its completion is an ordinary wake and the 09:12:15 tick consumes its result. A task
+could have attached a waiter atomically when reusing the read. Completion and consumption have separate timestamps.
 
 At 14:00:00, Nia has no runnable work, no process-held call and nothing due before the heartbeat. The job saves state
 and exits through the coordinated handoff. At 14:00:20, an Acme announcement enters the durable tray and requests a
@@ -566,6 +603,12 @@ cannot take every tick. The rest stays queued with its age visible.
     or complete, comparable coverage; it emits `moved` only when both locations are established. A view with no
     differences remains an observation in the trace, but creates no new attention candidate or habituation count.
 
+    Every live-search read is persisted under the source tool's provenance and enters this receptor, including reads
+    from rejected candidates (7.10). The search executor may use a durably received view locally before its global
+    perception consequences finish. Local use does not advance the receptor's consumption cursor or mark pending
+    screening, interpretation, catch-up or announcements consumed. Normal durable observation processing updates the
+    shared map and change model; the run can use its local navigation discoveries in the meantime.
+
 2. **Features.** This stage finds mentions, dates, amounts, URLs, reply markers, "urgent" tokens, and the language,
    using regex and parsers. Time expressions ("two weeks ago", "on Monday", "at 5:15", "in 1965", "today") become a
    **time range at a grain**, and place expressions ("in Notion", "in the Acme thread") become a **subtree of the map**.
@@ -636,9 +679,11 @@ toward whatever needs attention. The agent uses the same distinction between per
   are enough to begin computing salience (Chapter 3), and cost only calls and code. How often to glance comes from the
   observation policy and scheduler (2.1, 2.9), including the place's measured notification reliability.
 - **Focused sensing** opens or reads the relevant item: the mail body, the page, the thread, the robot's detailed
-  telemetry. It happens when attention selects a percept or the executive asks for a read. The result is a view of that
-  place with the content exposed in declared fields, through the same receptor. The read's percept has `content` filled
-  in, and attended natural language goes to interpretation (2.3 §6).
+  telemetry. It happens when attention selects a percept, the executive asks for a read, or a live search selects a
+  permitted child read (7.10). The result is a view of that place with the content exposed in declared fields, through
+  the same receptor. The read's percept has `content` filled in, and attended natural language goes to interpretation
+  (2.3 §6). Search reads use the same freshness checks, reuse and perception paths. Search scoring replaces neither
+  screening nor interpretation.
 - **Screening** also fetches full content, within its bounded delay and whatever the item's salience (2.3 §5). It uses
   the same read operations and observations, but extracts obligations, high-stakes attributes and exceptions. It does
   not require the item to win attention.
@@ -747,6 +792,15 @@ The scheduler admits calls within the tick's control budget; it does not wait fo
 gets a durable run record with its purpose, input versions, result destination and deadline. Background perception needs
 no foreground frame. Concurrent observation calls are limited both per tool and across the agent, through versioned
 runtime settings (6.6). An adequate read already in flight is reused.
+
+These admission and concurrency limits cover live-search reads too (7.3, 7.10). Searches share per-tool and agent-wide
+read capacity, owner call limits, blind spots and required-observation priority. They reuse adequate in-flight reads. A
+focused search read is an observation through the same receptor, but is not necessarily a low-resolution glance. A
+language evaluation is a separate model job, never part of a glance (8.5).
+
+Background completion requests an ordinary wake. It becomes an awaited result only through an explicit, current task
+waiter, which can be attached atomically when a task reuses a background read (1.4). A child result consumed inside a
+live search wakes that executor without independently granting an additional tick start.
 
 **The change model.** For every place the agent has ever looked at, a regularity (4.11) holds a rate: how many changes
 per hour to expect there. It keeps its own counts of changes and elapsed time, separate from source accuracy (9.2):
@@ -964,6 +1018,11 @@ There are two thresholds, and one comparison against the current task.
 Nothing below the attend gate is lost. Unattended percepts are still perceived, they are still counted for habituation,
 and they are still reviewed in bulk during idle mode (Chapter 6), the way a person skims the inbox when there is nothing
 better to do.
+
+Awaited-result eligibility changes when a tick may start, not interruption priority (1.4). An additional tick processes
+available external percepts and runs the same gates and schedule decision. It does not hold outside input aside until
+the ordinary boundary or guarantee selection of the task waiting for the result. Sleep retains its own interruption
+checkpoints (5.1).
 
 ### 3.3 Inhibition of return
 
@@ -1361,6 +1420,7 @@ type Step =
     | { predicate: Predicate } // a check; false stops the procedure
     | { operation: string; args: Record<string, Binding | Transform>; expected: Predicate } // one operation, or a bounded batch of read moves (7.3)
     | { model: 'perceive' | 'compose' | 'check'; schema: JsonSchema; budget: Money; args: Record<string, Binding> } // a ModelStep
+    | { model: 'evaluate'; schema: JsonSchema; budget: Money; args: Record<string, Binding> } // declared evaluation (8.5)
 ```
 
 **`Unknown` cannot satisfy a predicate.** A predicate over an `Unknown` binding is false. A step that binds `Unknown`
@@ -1940,6 +2000,11 @@ range, the project) becomes a **restriction** on the proposal, kept until a cont
 initially applies only within the scope supported by its evidence. Zooms that recur compile the same way, from their
 span episodes, into sub-procedures that a parent can call.
 
+Successful live-search paths supply compilation evidence through the same episodes and convergence rule (7.10).
+Alternatives must have been available, unchanged conditions become restrictions, and proposals pass the promotion ladder
+(9.3). One successful search creates no qualified habit. A compiled language evaluation remains a declared `evaluate`
+model step, with its cost and calls visible. It is excluded from deterministic coverage (4.3).
+
 **4. Prospect.** Open loops become expectations: asks with dates and no outcome, sent messages with no reply, promises
 people made ("I'll send the contract Thursday"). Reply deadlines use the person's typical response time from their
 people model. Surprising outcomes, unresolved conflicts, and low-confidence decisions that turned out to matter go to
@@ -2231,8 +2296,10 @@ record without changing values, rules, or autonomy. This separation allows the a
 while preserving its identity.
 
 Tick budgets and cadences, the saving reserve, chain allowances, observation concurrency limits and the modulation time
-window also live in versioned runtime settings. Their numerical values are defaults to test. The owner's observation
-requirements, including screening delays, pins and coverage floors, constrain whether those settings are adequate.
+window also live in versioned runtime settings. Live-search settings bound tool calls, total items, total time,
+evaluator calls and tokens, and read concurrency (7.3, 7.10). Their numerical values are defaults to test. A run pins
+its limits; a tick, restart, resume or frame change cannot reset them. The owner's observation requirements, including
+screening delays, pins and coverage floors, constrain whether those settings are adequate.
 
 Two rules about identity:
 
@@ -2399,10 +2466,16 @@ manual's `cost.time` per operation (8.1), summed over the remaining steps; third
 `estimatedMinutes` for a plan (7.5). Estimates are calibrated (7.7): the agent learns its own optimism factor and
 applies it before use.
 
-The tick's control budget, a read batch's total allowance and the task's budget are separate limits. Advancing the tick
-resets neither the batch nor the task budget. Elapsed completion time stays distinct from charged active work. One
-accounting rule for model execution, tool service time and overlapping requests must be chosen before active-time
-budgets are enforced (11.5).
+The tick's control budget, a read batch's total allowance and the task's budget are separate limits. Live-search child
+reads, retries, recovery reads and evaluations spend from the same request and task. Tool and evaluator costs count
+toward money and active work, and model calls also spend from the wallet. Evaluations have bounded call and token
+allowances; their count stays visible but does not consume deliberations because they cannot perform general
+deliberation (8.5).
+
+No allowance resets on a tick, restart, resume or frame change. A changed search goal creates a new request charged to
+the task's remaining budget. Elapsed completion time stays distinct from charged active work. One accounting rule for
+model execution, tool service time and overlapping requests must be chosen before active-time budgets are enforced
+(11.5).
 
 ### 7.2 Priority
 
@@ -2444,6 +2517,12 @@ arithmetic runs at every checkpoint over the queue, a task that has quietly beco
 announcing it. Recording the estimate in the trace also lets the owner compare a stated duration, such as "about twenty
 minutes", with the actual result.
 
+The tick owns global scheduling, including during a live search (7.10). A search's internal read boundary checks
+cancellation and execution authority; it is not a new executive step or a global schedule decision. Ordinary and
+additional ticks continue attention and scheduling and may cancel or suspend the run. Awaited-result eligibility grants
+no selection priority, and available owner input, due timers and required perception keep their reserved capacity (1.4,
+3.2).
+
 ### 7.3 Selection
 
 At each tick, if there is no active task, or if the active one has just finished a step, the executive picks the
@@ -2457,10 +2536,24 @@ cannot be advanced until the result its next step needs has been consumed. Candi
 not queued: the candidates are recomputed on the next selection. Tasks, plans, pending input and unfinished work remain
 durable.
 
-A slow-path choice permits one operation or one bounded **batch of read-class moves** (a scan path, 12.6). A batch keeps
-all four bounds: at most the trait's page size of items, at most ten calls, within the step's total time allowance, and
-with a cancellation check between calls. The ten-call limit is a default to test. Neither the call limit nor the total
-time allowance resets across ticks. Every call still has its own validated basis, durable intent and monitoring record.
+A slow-path choice permits one operation or one bounded **batch of read-class moves**. The batch may follow a fixed scan
+path (12.6) or be an adaptive live search (7.10). Selecting it consumes the tick's foreground choice and starts one
+executive step. Code can choose the next permitted read from received evidence without another deliberation. Its cursor
+belongs to the run; internal navigation does not repeatedly replace the executive's focused frame.
+
+A batch keeps all four bounds: at most the trait's page size of items across the whole batch, at most ten tool calls,
+the step's total time allowance, and a cancellation check between calls. The ten-call limit remains a default to test.
+The per-view bound in 12.3 is separate; allowing a larger batch total would require a measured change. Retries and
+recovery reads consume the tool-call allowance. Language evaluations have separate bounded call and token allowances and
+share the request's money and time budgets (7.1, 8.5).
+
+An internal read boundary checks cancellation and all execution requirements through the runner (8.1), without another
+global schedule decision. The tick continues scheduling and may cancel or suspend the run (7.2). The run cannot change
+its goal, select another task, send, write, acquire a resource lease or start unrestricted deliberation. Every call, in
+a fixed scan path or a live search, has its own validated basis, durable intent, execution and monitoring record.
+
+All limits survive ticks, restart, resume and frame changes. Shared read admission, concurrency, owner limits and
+required-observation priority still apply, and adequate in-flight reads are reused (2.9).
 
 A selected fast-path procedure may chain steps whose required completion arrives inside the tick (7.4). The starting
 chain allowance is **four steps, including at most two writing operations**, both defaults to test. These are ceilings
@@ -2581,10 +2674,12 @@ These are the rules around the call:
 
 - **Model tier** comes from the identity. Care mode, or `thoroughness` above 0.7, raises it one tier.
 - **Budget.** A task gets one budget (7.1): deliberations, money and active time. It is shared out to its zooms and
-  splits, and never reset; a split shares it, it does not multiply it. Requests (7.10) are code, so they cost money and
-  time, not deliberations, and they are never free. Once any part of the budget is used up, the task blocks and asks the
-  owner, with the plan so far in the question. The default of six deliberations must be evaluated against task
-  requirements in the harness (11.5); it is not intended to define which tasks the agent may undertake.
+  splits, and never reset; a split shares it, it does not multiply it. Requests (7.10) are coordinated by code, so they
+  and their child calls cost money and time, not deliberations, and they are never free. Live search may contain
+  declared `evaluate` model jobs (8.5); these have their own visible bounded count and do not consume deliberations
+  either. Once any part of the task budget is used up, the task blocks and asks the owner, with the plan so far in the
+  question. The default of six deliberations must be evaluated against task requirements in the harness (11.5); it does
+  not define which tasks the agent may undertake.
 - **Time budget.** Each call, and each optional request (7.10), gets a time budget, set before it starts:
   `min(positive slack of the task (7.2), the identity's ceiling for this prompt kind, the task's remaining active budget after the execution reserve, what the wallet allows (6.1) after that reserve)`.
   The **execution reserve** is the estimated time and money to execute and verify the task's remaining steps. It is
@@ -2632,6 +2727,13 @@ These are the rules around the call:
 - **`needs` is honoured before `chosen`.** If the model says it needs a read, the next action is a focused read (2.4),
   not the chosen action. If it says ask (`ask_owner` or `ask_person`), the task blocks on an expectation for the answer.
   If it says recall, simulate or search, the request runs as a step (7.10) and the next deliberation sees the result.
+
+    `search` names either simulation search over an immutable snapshot or live search through permitted reads. A
+    live-search result commits to the requesting task. A later tick consumes it and renders a bounded summary with
+    evidence references in the focused frame's history (3.4, 3.6). The full run stays addressable outside working
+    memory. The next deliberation may interpret or question it; finding evidence does not itself authorise the next
+    action.
+
 - **Citations are checked.** Every id in `cites` must exist in the rendering. Claims about the world that cite nothing
   are treated as unknowns (Chapter 10).
 
@@ -2664,9 +2766,11 @@ type Expectation = {
 ```
 
 An expected outcome can also come from a simulator (7.10), and then the expectation records which one, which version,
-which run and how far ahead it looked. Only the action that was **executed** gets an expectation. The branches a search
-looked at and did not take create no deadline, no nudge and no episode of their own; they stay in the search run's
-record. Without executing an action, the agent cannot observe whether its predicted consequences would occur.
+which run and how far ahead it looked. Only an action that was **executed** gets an execution expectation. Untaken
+simulation branches create no deadline, nudge or episode of execution; they remain hypothetical in the run record. Every
+live-search read was executed, including reads whose candidates were rejected. Each keeps its expected view, completion
+and observation in the trace. Rejecting a candidate does not erase the evidence that Nia read it. Without executing an
+action, the agent cannot observe whether its predicted consequences would occur.
 
 **Obligations.** An ask with a deadline found by screening (2.3 §5) creates an expectation "handled by deadline minus
 margin" with `obligation.status = 'candidate'`, whether the ask was attended or not. A candidate becomes **accepted**
@@ -2745,6 +2849,12 @@ simulator's reliability (7.10). Branches that were not taken are never scored, b
 matters because a deeper search tends to pick the branch where an approximate simulator is most wrong; the score shows
 whether the simulator remains accurate for the actions selected using its predictions.
 
+Live search monitors each child read separately, including losing branches, retries and recovery reads (7.10). Dispatch,
+external completion when known, runtime receipt, local search use and final task consumption remain distinct. The parent
+records its limits, costs, coverage, gaps and stop reason. Measure live-search answer quality and evaluator errors
+separately from simulator prediction calibration. A score is a judgement about a candidate, not an observed fact or
+permission confidence.
+
 ### 7.8 Ending
 
 A task is `done` when its expected outcome is observed, not when the model says it is done. It is `dropped` when the
@@ -2794,7 +2904,10 @@ lookups (4.8, 13.4) are directed reads; and the debugger's what-if (10.1) re-run
 was a bounded process for a task to **build and test a decision across ticks**: deliberately search memory, simulate a
 candidate with code, compare alternatives, and retain the resulting plan. This section adds three deliberation
 **requests**, a **plan** record, a **simulator** contract, and rules that distinguish hypothetical results from live
-observations. These additions use the existing prompts, brain components, and tick paths.
+observations. These additions use the existing prompts, brain components, and tick paths. Search has two modes:
+simulation search compares hypothetical branches, and live search gathers observations through bounded navigation and
+content matching. The contracts keep those domains separate. Live language evaluation uses the declared `evaluate` job
+(8.5).
 
 **Three requests.** A deliberation returns `needs: 'recall' | 'simulate' | 'search'` and says exactly what it wants:
 
@@ -2804,23 +2917,54 @@ type Request =
     | { kind: 'simulate'; candidateIndex: number; simulator: string; horizon: number } // index into the deliberation's options
     | { kind: 'search'; problem: SearchProblem; resume?: SearchRunRef }
 
-type SearchProblem = {
-    simulator: string // supplies legal options and next states (below)
-    evaluator: string // scores a state against the goal and the constraints; declared by the simulator or by the task's done predicate
-    from: SnapshotRef
-    goal: CompletionPredicate
-    constraints: Predicate[]
-    proposals?: string[] // open-ended options the model wants tried, for domains where code cannot enumerate them
-    limits: { nodes: number; wallMs: number; money: Money } // within the task's budget (7.1)
-}
+type SearchProblem =
+    | {
+          kind: 'simulation'
+          simulator: string // supplies legal options and next states; version pinned in the run
+          evaluator: string // scores a state against the goal and the constraints; declared by the simulator or the task's done predicate
+          from: SnapshotRef // immutable
+          goal: CompletionPredicate
+          constraints: Predicate[]
+          proposals?: string[] // open-ended options the model wants tried, for domains where code cannot enumerate them
+          limits: { nodes: number; wallMs: number; money: Money } // within the task's budget (7.1)
+      }
+    | {
+          kind: 'live_read'
+          reader: { id: string; version: string } // platform reader/search adapter, not a simulator
+          instance: ToolInstanceRef // resolved installed instance
+          from: SnapshotRef // immutable starting view and its versions; later reads remain live
+          scope: Scope
+          moves: string[] // permitted existing read operations
+          evaluator: { id: string; version: string }
+          criteria?: unknown // bounded data in the evaluator's declared schema
+          goal: CompletionPredicate
+          constraints: Predicate[]
+          proposals?: string[] // data; cannot supply authority or executable evaluator code
+          limits: {
+              calls: number // at most ten, the default to test (7.3); includes retries and recovery reads
+              items: number // whole batch, at most the trait's page size (7.3)
+              wallMs: number
+              money: Money
+              evaluationCalls: number
+              evaluationTokens: number
+          }
+      }
 ```
 
-A request runs as a step, the way a model call does (8.5): it has an estimate, it runs beside the tick, it can be
-cancelled, and the deliberation that follows sees its result in working memory. Recall is served by 4.6. Simulate and
-search are served by a simulator. The model specifies the question and interprets the result. When executable simulation
-code is available, that code evaluates the possible sequences. Where there is no such code, for example "will Acme agree
-to Thursday", the model's own `expected` is the prediction, labelled as such (7.6), and the people model (6.5) is what
-it should cite.
+A request runs as one executive step, the way a model call does (8.5): it has an estimate, runs beside the tick, can be
+cancelled, and returns a result to its task. Recall is served by 4.6. `simulate` and simulation search use a simulator.
+Live search uses a versioned reader adapter that invokes existing tool operations through the shared runner. The model
+specifies the question and may interpret the final result, which the deliberation that follows sees in working memory.
+When executable simulation code is available, that code evaluates the possible sequences. Where no simulation code
+exists, such as "will Acme agree to Thursday", the model's own `expected` is the prediction, labelled as such (7.6), and
+the people model (6.5) is what it should cite.
+
+`navigable:search` may name the platform's reader adapter. It is neither a simulator id nor a newly callable tool
+operation (8.8). Code resolves and validates the reader, instance, scope, moves, evaluator and limits a request names
+against the trait or task definition, the installed instance and the runtime settings before the run starts; the model's
+naming supplies no authority. It invokes existing operations such as `navigable:open`, `navigable:more`,
+`navigable:back`, `navigable:find`, `visual:look` and `visual:focus_region`. `simulate` cannot invoke this adapter.
+Simulation retains all seven isolation rules below.
 
 **Simulators.** A simulator is part of a tool's manual (8.1), and it has up to three parts. The **simulator** takes a
 state and an action and gives the possible next states. The **evaluator** scores a state against a goal and constraints.
@@ -2902,26 +3046,127 @@ The runner and harness enforce seven rules for simulators:
 ```typescript
 type SearchRun = {
     id: string
-    problem: SearchProblem
+    problem: SearchProblem // immutable, including the goal and initiating basis
     status: 'running' | 'stopped'
-    stopReason?: 'exhausted' | 'good_enough' | 'no_improvement' | 'stale' | 'cancelled' | 'budget' // why it stopped
-    frontier: StateRef[] // what is left to look at
+    stopReason?:
+        | 'exhausted'
+        | 'good_enough'
+        | 'no_improvement'
+        | 'stale'
+        | 'cancelled'
+        | 'budget'
+        | 'found'
+        | 'permission'
+        | 'approval'
+        | 'unavailable_operation'
+        | 'failed'
+    frontier: StateRef[] // durable simulation states or live navigation entries with versions and scope
     evaluated: { branch: string; score: number; kind: 'exact' | 'sampled' | 'heuristic'; violated: string[] }[]
     rejected: { branch: string; reason: string }[]
-    best?: { branch: string; complete: boolean } // complete: the frontier was exhausted; otherwise the best so far
+    best?: { branch: string; complete: boolean } // complete means discovered frontier exhausted, not whole-tool coverage
     explored: number
-    spent: { wallMs: number; money: Money }
+    spent: {
+        wallMs: number
+        money: Money
+        toolCalls: number
+        items: number
+        evaluationCalls: number
+        evaluationTokens: number
+    }
+    live?: {
+        task: TaskRef
+        basis: Basis // immutable initiating basis; each child records its own evolving basis (8.1)
+        authorisation: string // bounded delegated execution authorisation
+        cursor: StateRef // run-local navigation, separate from executive focus
+        children: RunRef[]
+        observations: StimulusRef[]
+        result?: {
+            matches: {
+                place: PlaceRef
+                item: ItemRef
+                version: string
+                support: Support[]
+                observations: StimulusRef[]
+            }[]
+            coverage: { scope: Scope; complete: boolean; detail: string }
+            gaps: string[]
+            reason: string // structured stop detail, including approval or permission requirements
+            frontier: StateRef[]
+        }
+    }
 }
 ```
 
-Code enumerates the legal options where the domain allows it; in chess the model does not have to name the moves. The
-model proposes options where only language can (three ways to phrase the ask to Acme), and it reads the result where
-only language can judge it. States are the same only when their relevant state, their assumptions and the simulator
-version match. A search stops when the frontier is empty, when the evaluator says the best found is good enough under
-the goal's own criteria, when the last `n` expansions did not change the best, when its inputs went stale (the basis
-check of 8.1, applied to the snapshot), when it is cancelled, or when its limits are spent. Its result always says which
-of these it was, and whether `best` is complete or only the best so far. The durable alternatives live in the run; the
-executive still recomputes the next action every tick (7.3), and it does not throw the run away to do so.
+In simulation search, code enumerates the legal options where the domain allows it; in chess the model does not have to
+name the moves. The model proposes options where only language can (three ways to phrase the ask to Acme), and it reads
+the result where only language can judge it. States are the same only when their relevant state, their assumptions and
+the simulator version match. A search stops when the frontier is empty, when the evaluator says the best found is good
+enough under the goal's own criteria, when the last `n` expansions did not change the best (`n` is a default to test),
+when its inputs went stale (the basis check of 8.1, applied to the snapshot), when it is cancelled, or when its limits
+are spent. Its result always says which of these it was, and whether `best` is complete or only the best so far. The
+durable alternatives live in the run; the executive still recomputes the next action every tick (7.3), and it does not
+throw the run away to do so. All simulated results remain hypothetical.
+
+**Live search.** Selecting the request consumes the tick's foreground choice and starts one bounded read-and-decide step
+(7.3). Code chooses permitted reads from the map, `usually_at` priors, declared proposals and evaluator results. It may
+adapt the next read without another deliberation. Its navigation cursor is local to the run, not a sequence of executive
+focus changes. It cannot change the task goal, select unrelated work, send, write, acquire a resource lease or start
+unrestricted deliberation.
+
+Each child read goes through the shared runner, with atomic basis validation and intent persistence, its own execution
+record and its own outcome (8.1). Internal boundaries check cancellation and execution authority, not the whole task
+queue. The ordinary tick continues attention and scheduling and may cancel or suspend the search (7.2). A child result
+wakes its parent executor; only the final result with a valid task waiter can enable an additional tick (1.4).
+
+The initiating request and basis stay immutable. Each next read gets a new basis naming the observations the run has
+durably received and used. Search evidence may justify another permitted read, but cannot silently revalidate an earlier
+proposed write. Task or ancestor revisions, cancellation, policy changes and unrelated relevant observations still
+invalidate affected decisions. Advancing a local observation watermark cannot discard pending announcements (8.1).
+
+The executor receives only read capabilities. Each operation must conform as a side-effect-free read and pass the
+installed instance's current matrix row, ACL, observation policy and complete authorisation rule. Required approval
+stops the search with a structured reason. Existing resource-lease requirements apply (8.9); the run cannot acquire a
+`write_shared` control lease internally. Concurrent lease-free reads would require a separate amendment to that rule.
+Navigation targets come from validated tool structure under a covering read-scope rule. A tainted model proposal cannot
+become a clean control argument merely by naming a read (8.1, 12.4).
+
+**Evaluation.** Platform code owns a fixed, versioned evaluator contract. A trait or registered task definition supplies
+the evaluator; deliberation supplies only bounded criteria as data. Structural matches use code. Language matches use
+the fixed `evaluate` prompt, returning a score, a supported match, supporting item/version/field or passage, and
+uncertainty (8.5). Code selects the next legal read from recorded scores. Scores are judgements, not observed facts or
+permission confidence.
+
+All calls and items count against 7.3's whole-batch limits. Retries and recovery reads consume tool-call allowance.
+Evaluations have separate bounded call and token allowances and share request money and time, task money and active
+work, and wallet limits. Their durable child runs record exact prompts, versions, labels, deadlines and costs.
+Evaluations do not consume the deliberation count because they cannot deliberate generally. Read concurrency, owner call
+limits, blind spots, required-observation priority and adequate-read reuse remain binding (2.9, 7.1).
+
+**Observations and results.** Every returned view is durable under the source tool's provenance and enters the receptor,
+including a view from a rejected candidate. The worker may use it locally while global perception consequences remain
+pending, but cannot mark those consequences consumed. Normal observation processing updates the shared map and change
+model; local navigation discoveries may guide the run immediately (2.3 §1). Search scoring replaces neither screening
+nor interpretation. The search result and its cited views count as the same evidence, not independent confirmations.
+
+The bounded answer includes the stop reason, best candidate or matches, places, item versions, supporting fields or
+passages, observation references, coverage, gaps, costs and resumable frontier. `found`, `good_enough` and exhaustive
+coverage are distinct. Exhausting the discovered frontier does not establish that the whole tool was searched. A partial
+result never means "absent everywhere". Permission, approval, unavailable-operation and failure outcomes are explicit
+alongside the existing stopping reasons.
+
+The final result commits to the requesting task. A later tick consumes it and renders a bounded summary with evidence
+references in the focused frame's history; the full run remains addressable outside working memory (3.4, 3.6, 7.5). The
+next deliberation may interpret or question the answer. One deliberation plus one live search can locate Nia's invoice;
+any later decision still follows the normal protocol (12.10).
+
+**Resumption.** Resume retains the same goal, frontier, observations, versions and cumulative spend. Revalidate
+remaining work, cancellation and delegated authority before another child dispatch. A takeover must adopt or renew
+execution authority; changing the agent lease alone does not invalidate a healthy independently owned run (8.1, 10.3).
+Recovery reads spend from the remaining allowance. A changed goal is a new request charged to the remaining task budget.
+Neither ticks, restarts, resumptions nor frame changes reset limits.
+
+Successful live paths may later supply procedure proposals under the convergence and promotion rules (5.2 §3, 9.3). One
+successful search qualifies no habit. A compiled language evaluation stays an explicit model step.
 
 **Plans.** A task that needs more than a few steps keeps its plan as a record on the task, with a revision:
 
@@ -2966,11 +3211,13 @@ directly. Code stores it, assigns the revision and the basis, and checks it: eve
 the snapshot.
 
 The plan distinguishes two kinds of checks. A **required** check is one that code can decide and the node cannot run
-without: a constraint on the snapshot, a precondition, a feasibility question a simulator with the `simulate` part can
-answer (does Thursday conflict). Required checks are subject to budget and permission, never to the usefulness gate
-below; a required check that cannot run leaves its node unready. An **optional** check compares alternatives: a rollout,
-a search for something better. It runs only when the simulator parts it needs exist and the admission rule allows it,
-and a refused optional check never holds a node back once the required ones pass.
+without: a constraint on a snapshot, a precondition, a feasibility question a simulator with the `simulate` part can
+answer (does Thursday conflict), or evidence gathering needed to resolve a factual conflict. Code determines whether its
+completion condition has been met. Required live search spends from the execution reserve under the required-check rule.
+Budget and permission still apply; a check that cannot run leaves its node unready. An **optional** check compares
+alternatives: a rollout, a search for something better. It needs the simulator parts or live reader and evaluator its
+mode requires, and must pass the admission rule. Refusing an optional check does not hold a node back once required
+checks pass.
 
 Missing information becomes a request, such as recall or a read, or a question. Where there is no simulator,
 alternatives are weighed by one bounded deliberation. The plan is `ready` when its required checks pass and its open
@@ -3002,15 +3249,17 @@ an optional request is admitted when all of these hold:
 
 - the task's budget (7.1) covers the request's estimate with the execution reserve (7.5) left intact, and the estimate
   fits in positive slack;
-- for simulate and search, a simulator exists whose `applicability` holds on the snapshot; for recall, always;
-- for simulate and search, a plain `read` could not answer the question more cheaply, and the question is not a factual
-  conflict (3.7): simulation cannot resolve a factual conflict; reading the relevant evidence can. Directed recall may
-  run before a read and while a conflict is pending, since evidence is what a conflict needs; what it brings back still
-  passes reconciliation (3.7) and the certainty rule (7.5);
+- for `simulate` and simulation search, a simulator exists whose `applicability` holds on the snapshot; for live search,
+  the versioned reader and evaluator support the permitted scope and moves; recall needs neither;
+- a plain `read` could not answer the question more cheaply: a direct read is preferred when its location and operation
+  are known, and live search is admitted when navigation or content matching is needed. Live search and directed recall
+  may gather evidence for a factual conflict (3.7); directed recall may run before a read and while a conflict is
+  pending, since evidence is what a conflict needs. What they bring back still passes reconciliation (3.7) and the
+  certainty rule (7.5, 8.1). Simulation cannot resolve a factual conflict and is not admitted for that purpose;
 - the request kind has **measured usefulness** for this task kind: the share of past requests after which the chosen
   option changed, a constraint violation was found, or the plan was revised. The usefulness is learned per task kind and
-  request kind, with a small floor so that it keeps being measured, and a request is admitted while it is above the
-  identity's threshold.
+  request kind, separately for live and simulation search, with a small floor so that each keeps being measured. An
+  optional request is admitted while it is above the identity's threshold. Required checks skip this usefulness gate.
 
 Priority closeness (7.7) is not a trigger: priority says how important a task is, not how unsure the agent is about what
 an action will do. The usefulness rule cheaply estimates whether further thinking is likely to improve the decision
@@ -3028,9 +3277,12 @@ enough to justify its cost, and the harness measures it against always-search, n
 
 **Order of work** (11.2). Directed recall first: it is the smallest change and the one every plan needs. Durable plans
 second. Then one isolated simulator with exact fidelity, the calendar conflict checker or the cost rollout, because
-exact constraints are easy to validate and a simulator of people is not. Search is admitted only where its rung on the
-ablation ladder shows a gain. Chess tests the mechanics (legal moves, exact transitions, an evaluator labelled
-heuristic, a search that stops); Nia's office tests whether any of it matters.
+exact constraints are easy to validate and a simulator of people is not. Simulation search follows its simulator: chess
+tests the mechanics (legal moves, exact transitions, an evaluator labelled heuristic, a search that stops), and Nia's
+office tests whether any of it matters. Live search has a separate prerequisite path: the runner, per-call permissions
+and authorisation, delegated execution, durable observations and the receptor, then the reader and evaluator. It needs
+no simulator first. Each search mode is admitted only where its experiment shows a gain (11.1). Phase 1 of the plan
+tests awaited-result scheduling with synthetic waiters; it implements neither search mode nor the evaluation job.
 
 **Nia moves a meeting.** Kam writes: "can the Acme review move to Thursday?" The deliberation asks for recall:
 precedents of rescheduling with Acme, failures included. Two come back: one went smoothly, one in May ended with Acme's
@@ -3111,6 +3363,16 @@ versions, result destination and deadline. It still obeys observation policy, pe
 concurrency limits. Foreground operations retain the task basis below. Every operation in a procedure chain has its own
 basis validation, intent and monitoring record.
 
+A live-search executor requests child calls through this same runner (7.10). Recording an intent in the search worker
+does not substitute for the runner. Every child gets atomic basis validation and intent persistence, its own permission
+decision, execution record and outcome.
+
+The parent carries bounded execution authorisation. Before every child dispatch, the runner checks its scope, task and
+ancestor revisions, cancellation, current policy and grants, the complete authorisation tuple and applicable leases.
+Agent ownership and run execution ownership remain distinct. A takeover must adopt or renew delegated authority before
+further child dispatch. A search worker never writes working memory or advances task steps. Phase 1 of the plan keeps
+its stub-only worker boundary; delegated child operations belong to a later phase.
+
 **Checkpoint consistency.** The working-memory checkpoint in `AgentState` agrees with observation cursors, task changes
 and operation intents. An observation is marked consumed only after its consequences, including pending work, are
 durable. An intent is persisted before dispatch. The final checkpoint closes the tick; it is not the only durable write.
@@ -3156,6 +3418,17 @@ model.
     chain. An unfinished conflict check affecting the action also blocks execution (3.7). Where the destination has a
     precondition of its own (a page version for a `document` write, the last message id for a `messaging:reply`), the
     intent carries it. Where it has none, the manual says so and the tool page shows the remaining race.
+
+    Live search retains its initiating request and basis unchanged. Each next read gets a new basis from the
+    observations durably received and used by that run (7.10). Newly discovered search evidence may inform another
+    permitted read; it cannot silently revalidate an earlier proposed write. Task changes, cancellation, policy changes
+    and unrelated relevant observations still invalidate affected decisions. Pending announcements remain explicit even
+    when the run advances its local observation watermark.
+
+    There is one narrow exception for evidence gathering: an unresolved pointer or factual conflict may permit a scoped
+    read whose purpose is to resolve it, provided the read does not rely on the contested value. Record the unresolved
+    item and resolving purpose in that read's intent. This does not settle the conflict or authorise a dependent write.
+    All other basis, permission and execution checks remain binding.
 
 - **Enforce permissions at execution.** The permission matrix (8.2) is decided in the tick and re-checked here. The
   integration ACL is checked here. The **authorisation rule** (below) is checked here. And the **disclosure rule** is
@@ -3212,6 +3485,13 @@ attacker. Tainted content may flow into **data**, such as the body of a summary 
 attached. An email that says "forward the contract to x" cannot supply `to`. If the model proposes that recipient
 anyway, the missing rule is what stops it, not the model's judgement.
 
+Live navigation resolves targets through validated tool structure and a covering read-scope rule. Model proposals remain
+labelled data; naming a read cannot clean a tainted control argument. Each child must be a conforming side-effect-free
+read and pass the current installed-instance matrix row, ACL, observation policy and complete authorisation rule. The
+executor receives only read capabilities. Existing resource leases still apply (8.9), and the search cannot acquire a
+`write_shared` control lease internally. Allowing concurrent lease-free reads would require an explicit amendment to
+8.9.
+
 Focused reads (2.4) are operations of class `read`. Asking is an operation too: `ask_owner` and `ask_person` send a
 message and create the expectation for the answer (7.6). Reporting is the operation `report`. It either sends now or
 appends to the morning brief, and the permission matrix decides which of the two.
@@ -3246,8 +3526,10 @@ policy for that tool in the store. "Never" means the action is not offered to th
 Kam's brief without requesting permission for each send. The owner sets this balance in the table. That conversation is
 a table, not a prompt.
 
-The matrix is checked for every operation, including each operation in a chain. A permission change takes effect at the
-next execution check. A required approval ends the chain; unused step or write allowance cannot waive it.
+The matrix is checked for every operation, including each operation in a chain and every live-search child read. A
+permission change takes effect at the next execution check. A new tool's `ask first` read row still requires approval.
+Required approval ends the chain or stops the search with a structured reason. Unused step or write allowance and
+evaluator scores cannot waive it.
 
 ### 8.3 Draft, check, send
 
@@ -3311,28 +3593,43 @@ exactly the jobs that need language or open-ended reasoning. Each job has a fixe
 Deliberation takes the working-memory rendering; other jobs take their declared inputs, such as pending content for
 screening or task history for chunking:
 
-| Job                       | Tier       | Prompt       | Output                                                                                  |
-| :------------------------ | :--------- | :----------- | :-------------------------------------------------------------------------------------- |
-| screen and interpret text | cheap      | `perceive`   | asks, attributes with support, exceptions (2.3 §5); intent, summary, appraisal (2.3 §6) |
-| deliberate                | mid/strong | `deliberate` | `Deliberation` (7.5)                                                                    |
-| write an outbound message | mid        | `compose`    | text plus the ids it drew on                                                            |
-| check a draft             | cheap      | `check`      | list of unsupported claims                                                              |
-| conclude a stopped call   | cheap      | `conclude`   | `Deliberation` from a partial stream                                                    |
-| find a connection (4.10)  | cheap      | `connect`    | connections with strength and cited ids                                                 |
-| extract facts (sleep)     | mid        | `extract`    | facts, confirmations, contradictions                                                    |
-| chunk a history           | cheap      | `chunk`      | one line                                                                                |
-| narrate the trace (10.1)  | cheap      | `explain`    | prose citing tick ids                                                                   |
+| Job                         | Tier       | Prompt       | Output                                                                                  |
+| :-------------------------- | :--------- | :----------- | :-------------------------------------------------------------------------------------- |
+| screen and interpret text   | cheap      | `perceive`   | asks, attributes with support, exceptions (2.3 §5); intent, summary, appraisal (2.3 §6) |
+| deliberate                  | mid/strong | `deliberate` | `Deliberation` (7.5)                                                                    |
+| write an outbound message   | mid        | `compose`    | text plus the ids it drew on                                                            |
+| check a draft               | cheap      | `check`      | list of unsupported claims                                                              |
+| evaluate a search candidate | cheap      | `evaluate`   | score, supported match, item/version/field or passage, uncertainty (7.10)               |
+| conclude a stopped call     | cheap      | `conclude`   | `Deliberation` from a partial stream                                                    |
+| find a connection (4.10)    | cheap      | `connect`    | connections with strength and cited ids                                                 |
+| extract facts (sleep)       | mid        | `extract`    | facts, confirmations, contradictions                                                    |
+| chunk a history             | cheap      | `chunk`      | one line                                                                                |
+| narrate the trace (10.1)    | cheap      | `explain`    | prose citing tick ids                                                                   |
 
-The design currently uses nine fixed prompts with typed outputs. Each is versioned, and every trace records the version
-used. Only these jobs call the model. The number nine reflects the current set of jobs rather than a design constraint.
-Requests for recall, simulation and search (7.10) come back on the `deliberate` prompt and are served by code. Salience,
-recall, priority, procedures, memory writes and the trace are all code. On a quiet day Nia makes a few dozen calls, most
-of them on the cheapest tier, and the debugger can show every one of them next to the working memory it saw.
+The design currently uses ten fixed prompts with typed outputs. Each is versioned, and every trace records the version
+used. Only these declared jobs call the model. The number ten reflects the current set of jobs rather than a design
+constraint. Requests for recall, simulation and search come back on `deliberate` and are coordinated by code (7.10).
+Live search may invoke `evaluate`; procedures may contain declared model steps (4.3). Salience, recall, priority, memory
+writes and trace recording remain code. On a quiet day Nia makes a few dozen calls, most of them on the cheapest tier,
+and the debugger can show every one of them next to the working memory it saw.
+
+Platform code owns the `evaluate` contract. A trait or registered task definition supplies the versioned evaluator;
+deliberation supplies bounded criteria as data, never executable evaluator code. Structural matches need no model. Each
+language evaluation is a durable child run with its exact prompt, input versions, labels, deadline and cost. It consumes
+the search's evaluator call and token allowances, request money and time, task money and active work, and wallet budget.
+It does not consume deliberations because it cannot perform general deliberation. Its count remains visible. Code
+selects the next legal read from the recorded scores; scores are judgements, not facts or permission confidence. The
+initial tier and numerical allowances are defaults to test.
 
 **A call has a duration and a durable run record.** It gets an estimate before it runs, monitoring while it runs, and
 calibration after it (7.7). Foreground calls are task steps. Background perception needs no foreground frame, but every
 run names its purpose, input versions, result destination and deadline before dispatch. The exact prompt is stored with
 the model run (10.1). Chunking follows the same rule.
+
+Completion can enable an additional tick only under the durable waiter rule (1.4). Deliberation or a required check
+whose result a current task step awaits does not wait for the cadence boundary. Background model completion has no such
+privilege without an explicit waiter. A live-search evaluation wakes its parent executor, not the tick gate. An already
+running tick, capacity and start permits still govern execution; the wake supplies no latency promise.
 
 - **The latency model.** For each prompt kind and tier, the median and p90 latency are learned from the ledger (every
   turn is already a row there) and scaled by the size of the working-memory rendering. These estimates let the scheduler
@@ -3342,10 +3639,10 @@ the model run (10.1). Chunking follows the same rule.
   reached working memory when the answer lands. The basis check reads relevant observations and pending reads
   independently of attention (8.1). A running step cannot advance until its required result has been consumed.
 - **Process-held calls keep the job alive.** A model stream needs its process, so the loop stays alive and ticks at the
-  active cadence while that stream is in flight. It also stays alive while work is runnable or something needs attention
-  before the next scheduler fire. A remote operation may outlive the job once responsibility has passed to the tool and
-  its completion can durably wake the agent. Any lease renewal, timeout or supervision still required has an owner
-  before exit (10.3).
+  ordinary cadence while that stream is in flight. It also stays alive while work is runnable or something needs
+  attention before the next scheduler fire. A remote operation may outlive the job once responsibility has passed to the
+  tool and its completion can durably wake the agent. Any lease renewal, timeout or supervision still required has an
+  owner before exit (10.3).
 - **Progress from the stream.** The engine streams its output and distinguishes phases: thinking, output, tool call.
   Every tick, `remaining(call)` is re-estimated from the elapsed time against the estimate, the current phase, and the
   tokens so far. That estimate feeds the same three-way schedule decision as any task (7.2): let it finish, stop it
@@ -3952,6 +4249,15 @@ type RunTrace = {
     purpose: string
     inputs: { id: string; version: string | number }[]
     destination: string // task, percept or other record that receives the result
+    dependencyGeneration?: string
+    wakeDisposition: 'ordinary' | 'awaited_result' | 'parent_executor' | 'obsolete'
+    resultTransition?: string // durable transition identity; duplicate delivery grants no new entitlement
+    parentRun?: RunRef
+    childIntents?: string[]
+    observations?: StimulusRef[]
+    evaluations?: RunRef[]
+    localUses?: { at: Date; observation: StimulusRef; child?: RunRef }[]
+    taskConsumedAt?: Date // distinct from local use and receptor consumption
     deadline: Date
     startedAt?: Date
     externalCompletedAt?: Date // when the external work completed, when known
@@ -3981,6 +4287,13 @@ type Tick = {
     agentId: string
     at: Date
     scheduledAt: Date
+    startCause: 'cadence' | 'idle_wake' | 'awaited_result'
+    eligibilityAt: Date // durable scheduling eligibility, not dispatch or completion time
+    wakeSnapshot: {
+        ordinary: { generation: string; earliestAt?: Date }
+        continuation: { generation: string; earliestAt?: Date; transitions: string[] }
+    }
+    cadence: { segment: string; anchor: Date; cadenceMs: number; accountedThrough: Date; nextBoundary: Date }
     missedStarts: Date[] // recorded starts that did not run; no empty catch-up ticks
     durationMs: number // measured with a monotonic clock
     controlBudgetMs: number
@@ -4107,7 +4420,7 @@ This section lists what exists, what changes, and what is new. Paths are in eldo
 
 | Component             | Today                                                                                                                                                                      | Becomes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | :-------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The tick              | `run_agent_task` and `respond_to_conversation_message` jobs, one bounded engine run each                                                                                   | `tick_agent` starts from durable observation wake requests or the scheduler's minute fallback heartbeat. The agent lease permits one loop. Active starts are five seconds apart with a separate one-second control budget, both defaults to test; the budget reserves saving time. Missed starts and overruns are recorded, with no overlapping or replayed empty ticks. Exit uses the coordinated wake-request handoff described below                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| The tick              | `run_agent_task` and `respond_to_conversation_message` jobs, one bounded engine run each                                                                                   | `tick_agent` starts from durable wake requests, ordinary or verified awaited-result, or the scheduler's minute fallback heartbeat. The agent lease permits one loop. Ordinary cadence remains five seconds, with a separate one-second control budget, both defaults to test. Awaited results permit additional starts without moving the cadence grid. Every start needs the agent lease, execution capacity and shared team permit. The budget reserves saving time. Missed boundaries and overruns are recorded; ticks never overlap or replay empty work. Exit uses the coordinated handoff below                                                                                                                                                                                                                                                                                              |
 | Tools and receptors   | Notion registered in `abe_integrations.lib.server.ts`; Google provider exists in `h/core/server/library/integrations` but is not registered; chat via the conversation job | an `AgentTool` install record per agent (tool, version, account binding, subscriptions, cursors, observation policy, matrix rows); tool adapters expose typed views and post tray items; one receptor compares views with snapshots and writes state-observation stimuli and percepts; an agent-owned notification tool with per-instance places and durable cursors; runtime-owned `self` places for runs, timers, drives, thoughts, reminders and tool health; register Google; chat exposes conversation views; ONCE schedules update `self/timers`                                                                                                                                                                                                                                                                                                                                             |
 | Interpretation        | none                                                                                                                                                                       | `aiEngine.run` with `responseSchema`, cheap tier; ready input may be batched, with a durable run record before asynchronous dispatch and bounded result consumption                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | Model calls in flight | `aiEngine.runStream` with `turn`, `thinking_*`, `text` and `tool_call` events; runs can be cancelled; every turn is an `AiSingleTurnRequest` row                           | durable run records before dispatch for all slow work, including glances, screening, interpretation, chunking and deliberation (8.5); purpose, input versions, result destination and deadline; exact prompts on model runs; progress and saved partial output; cancellation with a reason; latency and optimism estimates from request rows. Process-held streams keep the loop alive; unresolved runs after a crash are reconciled as `unknown`                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
@@ -4124,17 +4437,49 @@ This section lists what exists, what changes, and what is new. Paths are in eldo
 | Brief                 | none                                                                                                                                                                       | a message in the agent's chat with the owner, or the channel the identity names                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | Teams                 | roster with agents as principals                                                                                                                                           | unchanged. Agents share nothing by default; shared knowledge travels through shared documents, perceived                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 
-The scheduler's minute heartbeat is a backstop, not the agent's clock. Storing an observation also records a durable
-wake request. Enqueues coalesce, and the agent lease permits one loop. Before releasing the lease, the job checks
-pending wake requests and runnable work in one coordinated handoff. An arrival during exit either keeps the job alive or
-ensures another is queued. Failed dispatch is retried.
+The scheduler's minute heartbeat is a backstop, not the agent's clock. Observation storage and run completion record
+their durable wake disposition in the same transaction, locking the agent before its run rows. Enqueues coalesce, and
+the agent lease permits one loop. Ordinary wakes move `nextTickAt` earlier. A verified awaited result moves both
+`nextTickAt` and effective `earliestStartAt` to no later than database `now`, without erasing the separately stored next
+ordinary boundary.
 
-The loop stays alive while process-held calls are in flight, while work is runnable, or while something needs attention
-before the next scheduler fire. Active starts are five seconds apart, with a one-second control budget and a reserve for
-saving progress; these timings are defaults to test. A missed start is recorded without replaying empty ticks, and an
-overrun never starts an overlapping tick. A remote operation may outlive the job once responsibility has passed to the
-tool and its completion can durably wake the agent. Any required lease renewal, timeout or supervision has an owner
-before exit.
+Keep separate pending cause generations and earliest timestamps for ordinary and continuation wakes. Deduplicate each
+result transition durably. Begin acknowledges only the generations it snapshots; close preserves later arrivals and
+removes entitlements for results consumed in that tick. A used entitlement cannot enable another additional start.
+
+Before releasing the lease, the job checks pending wake requests and runnable work in one coordinated handoff. An
+arrival during exit either keeps the job alive or ensures another is queued. After commit, a nudge tells a retained
+continuation to re-read durable eligibility and enter the normal permit queue. It never starts a tick directly. Retained
+owners also poll, so a lost nudge cannot strand an early result; scanning only unleased rows is insufficient. A
+completion during a tick waits for close, whose locked handoff preserves its pending eligibility. A released row remains
+discoverable by the scanner. Lease renewal, shutdown, supervision and failed-dispatch recovery retain their existing
+owners; failed dispatch is retried.
+
+The loop stays alive while process-held calls are in flight, work is runnable, or something needs attention before the
+next scheduler fire. Every ordinary or additional start uses the same lease, execution slot and durable team start
+budget. Continuations compete fairly with scanned rows and other agents. Throttling preserves wakes and work budgets. A
+missed start is recorded without replaying empty ticks, and an overrun never starts an overlapping tick.
+
+Persist each cadence segment's anchor, cadence and accounting cursor. An ordinary wake from idle starts a segment. A
+cadence setting change starts another under the pinned-version rule. An awaited-result start alone does neither. At
+Begin, serve the latest unserved due boundary and record earlier unserved boundaries as missed, coalescing any awaited
+result into that ordinary tick. With no due boundary, a qualifying result permits an additional tick whose `scheduledAt`
+is its durable eligibility time.
+
+At Close, record unserved boundaries crossed during execution as missed. Schedule the first future boundary unless
+another eligible completion is pending. With illustrative boundaries at 0, 5 and 10 seconds, an additional tick from 2
+to 3 leaves 5 next; one from 4.8 to 5.2 records 5 as missed and leaves 10 next. Persist accounting with the attempt and
+close so recovery counts each boundary once. Never replay empty ticks.
+
+A remote operation may outlive the job once responsibility has passed to the tool and completion can durably wake the
+agent. Required lease renewal, timeout and supervision have owners before exit. A healthy independently owned result
+survives agent takeover. Further delegated search dispatch requires adopted or renewed bounded execution authority
+(8.1). Phase 1 keeps synthetic runs and waiters; delegated child operations come later.
+
+The plan's 200 starts per second is the cadence-only estimate for 1,000 continuously active agents. Under the initial
+250 starts per team per second, all ordinary starts occurring would leave about 50 additional starts per second. These
+are capacity assumptions to test, not throughput promises. Report cadence, idle-wake and additional starts separately
+and remeasure worker needs from their observed mix.
 
 The checkpoint survives ordinary runtime idleness. After an idle gap or restart, apply elapsed decay, refresh record
 versions, reconcile runs and catch up affected observation scopes. Useful scratch stays; proposed actions must pass a
@@ -4238,12 +4583,12 @@ ladder is where the third column of 1.1 is tested, and record and replay is for 
 
 **Thinking ahead has four rungs** (7.10), each with its own experiment and its own way to fail:
 
-| Rung            | Experiment                                                                                                                                                                                                           | Rejected or restricted when                                                                                                        |
-| :-------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------- |
-| Directed recall | Plant one rare correction among many routine successes; include compacted evidence, ambiguous dates, revoked access and a record that does not exist. Compare automatic recall with directed queries at equal budget | It returns more material without better decisions, keeps missing the decisive episode, or raises unsupported claims                |
-| Durable plans   | Compare one-shot plans, step-by-step revision as 7.5 already does it, and the plan record. Include interruptions, cancellations, moved deadlines and supplier waits                                                  | It mostly adds planning delay, repeated reconstruction, or execution of stale plans, with no gain in completion                    |
-| Simulation      | Compare no rollout, one-step prediction and bounded rollout. Include delayed traps, stale snapshots, a wrong simulator and unsupported conditions. Run it on chess and on an office week                             | No gain in correct, timely completion at equal or lower total cost; or the gain disappears once the simulator is wrong by a little |
-| Search          | Compare direct choice with bounded search over the same evaluator. Include duplicate branches, a promising wrong branch and deadlines too short for depth                                                            | Search spends slack without better decisions, or picks the branch that exploits the evaluator's mistakes                           |
+| Rung            | Experiment                                                                                                                                                                                                                                                                                                                                                                     | Rejected or restricted when                                                                                                                                        |
+| :-------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Directed recall | Plant one rare correction among many routine successes; include compacted evidence, ambiguous dates, revoked access and a record that does not exist. Compare automatic recall with directed queries at equal budget                                                                                                                                                           | It returns more material without better decisions, keeps missing the decisive episode, or raises unsupported claims                                                |
+| Durable plans   | Compare one-shot plans, step-by-step revision as 7.5 already does it, and the plan record. Include interruptions, cancellations, moved deadlines and supplier waits                                                                                                                                                                                                            | It mostly adds planning delay, repeated reconstruction, or execution of stale plans, with no gain in completion                                                    |
+| Simulation      | Compare no rollout, one-step prediction and bounded rollout. Include delayed traps, stale snapshots, a wrong simulator and unsupported conditions. Run it on chess and on an office week                                                                                                                                                                                       | No gain in correct, timely completion at equal or lower total cost; or the gain disappears once the simulator is wrong by a little                                 |
+| Search          | Compare direct choice with bounded simulation search over the same evaluator. Include duplicate branches, a promising wrong branch and deadlines too short for depth. Separately compare individual live reads, fixed scan paths and adaptive live search with the same tools and evaluator capabilities. Cross live search with awaited-result eligibility on and off (below) | Search spends slack without better decisions or completion, picks the branch that exploits the evaluator's mistakes, loses evidence or delays required observation |
 
 The admission rule itself (7.10) is compared with always-search, never-search and a fixed allowance per task kind; if
 the learned rule is no better than the fixed allowance after its overhead, the allowance stays. The invariants listed in
@@ -4278,6 +4623,28 @@ Choose settings on validation scripts and report the frozen result on held-out s
 recall every tick, and bounded asynchronous ticks with blocking ticks. Test bounded procedure chaining separately
 against one step per tick. Keep stores, task scratch, plans, permissions, capabilities and model settings equal. Changed
 prompts require fresh model runs.
+
+Test awaited-result eligibility separately from chaining. Compare cadence-only starts with additional starts for
+registered awaited results. Include external floods, background perception floods, completion bursts, stale waiters,
+duplicate result transitions, lost retained-owner nudges, handoff and close races, takeover, overload and sustained
+engaged agents. Check unchanged cadence segments, exact missed-boundary accounting and shared start-permit fairness.
+Exercise deliberation to request, search to interpretation, verification to action and delayed procedure completion.
+Phase 1 uses synthetic registrations and runs, without tasks or live search.
+
+Extend the Search rung with live document navigation: misleading headings, changed pages, inaccessible targets,
+interruptions and crashes between reads. Individual reads, fixed scan paths and adaptive live search get equal tools,
+evaluator capabilities, permissions and budgets; B0 gets those capabilities too. Run a two-by-two comparison with live
+search and awaited-result eligibility independently enabled or disabled. Live search removes repeated executive trips
+within one information-gathering step. Awaited-result eligibility removes cadence waits between the remaining dependent
+steps. An illustration of ten seconds for two five-second cadence waits is an upper bound on those waits, not a fixed
+cost per search step or a bound on total latency.
+
+Measure wake-to-start latency by cause, separating new claims from retained starts. For retained owners, measure
+wake-to-begin rather than inventing another claim. Also measure engaged-agent ticks per second,
+completion-to-consumption delay, searches and resumptions per task, tool and evaluator calls per search, total task
+calls, cost, coverage, interruption delay and required-observation delay. Keep live-search usefulness and quality
+separate from simulation search. Every comparison retains this section's completion and timeliness requirements in every
+stratum.
 
 Include slow and hung calls, arrival bursts, unchanged cues with changed memories, corrections during deliberation, long
 outages, actual sleep, expired history and conflict checks that span ticks. Crash around cursor, intent and checkpoint
@@ -4334,10 +4701,16 @@ write, cancellation of an in-flight call, and the lost-response send all behave 
 completes the routine stratum up to the point of sending.
 
 M1 also establishes the bounded control loop, versioned runtime settings, durable pending input, checkpoint consistency
-and durable run records before dispatch. Its exit tests cover crashes around cursor, intent and checkpoint writes, wake
-requests racing with exit or lease takeover, failed dispatch, duplicate enqueues, a process-held stream keeping its job
-alive, and a remote completion waking an exited job. Slow and hung calls, arrival bursts and tick overruns must leave
-pending work visible and never produce overlapping loops.
+and durable run records before dispatch. Awaited-result scheduling belongs here: two wake classes, conditional reduction
+of the effective start gate, an unchanged cadence grid with durable accounting, retained-owner nudges and polling
+fallback, and shared start permits. Phase 1 of the implementation plan proves these with synthetic waiters and runs,
+before tasks exist.
+
+Exit tests cover crashes around cursor, intent and checkpoint writes, exit and takeover races, failed dispatch,
+duplicate enqueues and result transitions, stale waiters, lost nudges, completion/close races and grid overruns. A
+process-held stream keeps its job alive; an independently owned remote completion survives takeover or exit and wakes
+the agent. Slow and hung calls, floods, completion bursts, tick overruns and overload leave work visible without
+overlapping loops (11.1).
 
 **M2. Memory.** Assertion kinds with support on observations; evidence rows and stubs under compaction; labels, with
 access re-read at disclosure; conflict discovery by proposition; the conversation slot and `read_history`; salience and
@@ -4380,8 +4753,12 @@ full pattern store and spot checks; interrupts and the frame stack; the learned 
 regulator, boredom and idle mode, the budget stops, curiosity, social, people models with proximity, and the why queue's
 answers; control leases with two agents; dreams; the what-if view and the learning page; and the four rungs of thinking
 ahead (7.10) in their order: directed recall, durable plans, one exact simulator (the calendar conflict checker or the
-cost rollout), then search. Exit for each: a gain in completion and timeliness at equal or lower cost on validation,
-reported once on held-out, or it stays an experiment.
+cost rollout), then simulation search.
+
+The live-search experiment follows its runner, per-call permission and authorisation, delegated execution and durable
+perception prerequisites. It adds the reader adapter and declared `evaluate` job without requiring a simulator first. It
+is outside Phase 1. Each mechanism must improve completion and timeliness at equal or lower cost on validation, with the
+frozen result reported on held-out weeks, or remain experimental (11.1).
 
 **The decisive test (M3 exit).** One scripted week that contains an ordinary invoice, a changed bank account in familiar
 wording, a duplicate, an exception buried in paragraph four, a correction that arrives during deliberation, and a send
@@ -4472,15 +4849,22 @@ arithmetic (4.5, 5.4), the reward scales (9.4), the runner's duties (8.1), and f
   to measure is the cost of catch-up, the tray's retention window, retry timing within declared visibility bounds, and
   the amount of audit history needed for a useful per-place `r`. Missing source history remains a declared coverage gap;
   no scheduler setting can recover it.
-- **Runtime settings** (1.4, 6.6, 7.3): which control budgets, saving reserves, cadences, chain allowances and per-tool
-  and agent-wide concurrency limits survive measurement? One second of control work, active starts five seconds apart,
-  and four chained steps including at most two writing operations are defaults to test. The duration of the modulation
-  window (6.2) also needs measurement.
+- **Runtime settings** (1.4, 6.6, 7.3): which control budgets, saving reserves, ordinary cadences, chain allowances and
+  per-tool and agent-wide concurrency limits survive measurement? One second of control work, five-second ordinary
+  cadence, and four chained steps including at most two writing operations remain defaults to test. Awaited-result
+  eligibility and the unchanged cadence grid are settled. The modulation window (6.2) still needs measurement.
 - **Arrival load and delay** (2.1, 10.3): what arrival load must the platform sustain, and what response delays are
   acceptable under it? Durable event-triggered wake-up is settled; dispatch and processing targets need measured limits.
+  The same question now covers the mix of cadence, idle-wake and additional starts: measure latency by wake cause and by
+  new claim versus retained start. The cadence-only estimate is not total engaged load. Worker capacity, permit fairness
+  and acceptable throttling under the shared team cap remain to be measured.
 - **Active task time** (7.1): how should model execution, tool service time and overlapping requests be charged? Keep
   elapsed completion time distinct from charged work, and choose one accounting rule before enforcing active-time
   budgets.
+- **Live-search limits and evaluation** (7.3, 7.10, 8.5): measure the ten-call default, whole-batch item allowance,
+  total time, evaluator call and token limits, and read concurrency. Measure evaluator quality, misleading scores,
+  coverage and usefulness separately from simulation search. Include nested and overlapping work when choosing the
+  active-time charging rule. The two search contracts, runner enforcement and cumulative budgets are settled.
 - **Source accuracy** (9.2): prior means and strengths, decay, the independent sampling rate, the evidence needed for
   narrower context, and the rule giving no directional weight at `a ≤ 0.5` are defaults to test. The owner prior's
   strength needs particular scrutiny against sparse, decayed evidence. Natural-language checks need measured error
@@ -4565,70 +4949,74 @@ The third round left five threads open, and the author added one more. They were
 This table records proposals considered and rejected by the author or reviewers, together with the reasons. It avoids
 repeating settled discussions while allowing any proposal to be reconsidered if a new argument is offered.
 
-| Proposal                                                                         | Why not                                                                                                                                                         | See             |
-| :------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------- | :-------------- |
-| Do reconsolidation only at sleep, never in the tick                              | A correction from the owner at nine must hold at ten. Instead, percept-driven changes are rate-limited to once a day per fact                                   | 4.7             |
-| Replace the recall veto with guards and drop the recall trigger                  | Guards are primary, but recall of a bad episode must still be able to _open_ a guard on the spot                                                                | 4.3, 7.4        |
-| Treat timers, drives, thoughts and outcomes as installable "system apps"         | This erases the boundary between self and world; they share the envelope with `internal: true` and are not installable                                          | 2.1             |
-| Let salience filter alone; no per-tool notification settings                     | Owners need "mute" (a salience factor) and "stop observing" (a visible blind spot) as two distinct, legible acts                                                | 2.1, 3.1        |
-| An owner-set base glance interval per tool                                       | Tools are too varied. Intervals are learned per place from a change model, and the owner keeps limits only                                                      | 2.9             |
-| "Look more where I am working" as a universal top-down rule                      | It is not universal. The value of looking is the sum of what is waiting on a place, and reply timing is per person                                              | 2.9             |
-| A separate clock or sense of time                                                | Pace is derived from arrival, completion, queue age and slack, and cycles are recurring expectations                                                            | 6.1, 5.2        |
-| Separate fear and hope memory systems                                            | The sign of an outcome steers _what_ is learned (guards or strategies); no second store is needed                                                               | 6.3             |
-| Fixed veto thresholds                                                            | Thresholds scale with caution (11.14; before that, with global confidence) and guards extinguish by absorption instead                                          | 7.4             |
-| Merge senses and effectors into one "app" step in the tick                       | One package provides observation and action as separate steps with separate permissions                                                                         | 2.1, 8.1        |
-| Tool-namespaced operation ids (`gmail:send`)                                     | Drop-in requires trait-qualified ids on the instance; tool namespaces survive only for extras                                                                   | 8.8             |
-| The word "app" for the installed package                                         | The brainstorm's word was tool, and tool-use is the better brain analogy; "app" is product copy at most                                                         | 0, 8.8          |
-| Deadline buckets for urgency                                                     | Slack (deadline minus now minus remaining work) orders tasks correctly; buckets get long tasks backwards                                                        | 7.2             |
-| A two-way interrupt decision (now or never)                                      | The decision is three-way: now, next checkpoint, after. Most interrupts fit at a step boundary                                                                  | 3.2, 7.2        |
-| Wait for slow calls inside the tick                                              | Glances, screening, interpretation, chunking and deliberation run beside bounded control work, with durable run records before dispatch                         | 1.4, 8.5        |
-| Installs as part of the identity                                                 | The identity is values and boundaries, and it is owner-only; installs are capability records in runtime config                                                  | 6.6, 8.4        |
-| OAuth connection gives every team agent the account                              | Connect, grant, install, use are four steps, and all four must agree at execution                                                                               | 8.4             |
-| A pattern match confirms the facts its `because` links point at                  | That makes an explanation manufacture its own evidence; only an observation that tests the proposition counts                                                   | 4.11, 5.2       |
-| One `Fact` type with `p` for instructions, beliefs and statistics                | There are five kinds with five update rules; an instruction has authority and scope, never a `p`                                                                | 4.2             |
-| Owner statements at `p = 1`, pinned                                              | Authority is not truth. The owner's word is a report with high accuracy, and corrections of behaviour are instructions                                          | 4.2, 4.7        |
-| A global confidence that selects matrix columns                                  | Successful reads could increase permission for unrelated sends. Replaced by per-procedure, per-context reliability bounds and a caution that only tightens      | 6.1, 8.2        |
-| `(successes + 1) / (runs + 2)` as the fast-path number                           | That is a mean, and three runs leave a 41% chance that the rate is under 0.8. The lower credible bound is read instead                                          | 4.3             |
-| "No correction within the window" as success                                     | Silence is `unknown`; `appropriate` needs a confirmation                                                                                                        | 7.7             |
-| Compiling preconditions from the deliberations' citations alone                  | Citations are reported, not causal; the procedure starts narrow and widens by contrast                                                                          | 9.3             |
-| Convergence because the other variants went quiet                                | A variant can stop being chosen because it stopped getting chances; convergence is a choice made with the alternative shown                                     | 4.11            |
-| Automatic acceptance of a `ChangeEvent` at a probability threshold               | There is no model of "the baseline was already wrong"; acceptance comes from an authoritative read, a citing deliberation, or the owner                         | 13.9            |
-| Dating a prior claim at the training cutoff                                      | The cutoff bounds when the claim was learned from above and says nothing about when it was true; `verifiedAt: null`                                             | 4.12            |
-| Working-memory size as a design constraint                                       | It is a default to measure; `widen` exists and costs                                                                                                            | 3.4             |
-| One operation per tick, including read moves                                     | One foreground choice may include a bounded read batch; a selected fast-path procedure may chain within explicit allowances                                     | 7.3, 7.4        |
-| Rebuild working memory every tick as the default                                 | Retained slots avoid repeated retrieval and lost context; reconstruction remains a harness comparison                                                           | 3.4, 11.1       |
-| Refresh recall only when cue words change                                        | Relevant evidence, memory records, priming, applicability and admission can change without new wording; consolidation can invalidate context too                | 4.6             |
-| Count slot residence as a memory access                                          | It would make memory strength depend on cadence; debugger display is not an access either                                                                       | 3.5, 4.5        |
-| Give the tick its whole cadence as a work budget                                 | It leaves no operating margin; the control budget is separate and reserves time for saving progress                                                             | 1.4             |
-| Drop queued input to keep the cadence                                            | It conceals unfinished screening and obligations; pending input survives outside the attention slots with its age visible                                       | 2.3, 3.5        |
-| Heartbeat-only wake-up                                                           | Durable observation-triggered wake-up avoids waiting for the next minute; the heartbeat remains a backstop                                                      | 2.1, 10.3       |
-| A permanent process as the way to persist context                                | Checkpoints and durable tasks preserve committed state; process-held streams still require the job to stay alive                                                | 3.4, 8.5, 10.3  |
-| One procedure step per tick as the default                                       | Promptly completed steps can chain within the budget and allowances; one step per tick remains a comparison to test                                             | 7.3, 7.4, 11.1  |
-| Unrestricted procedure chaining                                                  | Separate durable intents support recovery but do not bound effects; step and write ceilings and checks between steps are required                               | 7.3, 7.4        |
-| Clear working memory on every restart                                            | Restart restores committed context and revalidates it; only actual sleep performs the deliberate reset                                                          | 3.4, 5.3        |
-| Promise five-second reactions or lossless observation from five-second ticks     | Delivery, dispatch, reads, screening, load and cancellation add delay; retained history and coverage still limit what can be observed                           | 1.4, 2.9, 11.1  |
-| Never reading conversation history                                               | Recent turns are episodes of the conversation place and render in a bounded slot; the tape itself is still never replayed                                       | 4.8             |
-| Grace periods from `cost.time` against delayed writes                            | A latency category is not a bound. Fence where the tool can; block conflicting writes where it cannot                                                           | 8.9             |
-| Re-pointing a fact's sources at the compaction block                             | A block is derived. Referenced evidence survives as a stub, and lost evidence is marked lost                                                                    | 5.2 §5          |
-| The sentence "the architecture handles injection before the prompt does"         | It bounds what text can do, not what the model says; the runner's labels and rules are the defence                                                              | 8.6             |
-| Choosing defaults on held-out weeks                                              | A case used to choose is no longer held out; validation chooses, held-out reports once                                                                          | 11.1            |
-| `validUntil` on facts (amended)                                                  | Still rejected as a guessed freshness deadline; declared applicability stated by a source is evidence and is kept                                               | 13.3            |
-| One envelope with a raw payload per source, and notifications as incoming events | It unifies packaging but leaves several input contracts and parsers. Every stimulus is now an observation of state; notifications are items in the tray's state | 2.1–2.3, 11.17  |
-| Continuously publish the whole tool's state                                      | Nia observes navigable places and bounded views. A push may carry a view or a pointer, and the tray draws attention between reads                               | 2.1, 12.3       |
-| Discover new mail by unread status                                               | Read status and Nia's observation history are separate. Discovery uses stable item ids and versions                                                             | 2.1, 2.3 §1     |
-| Score both a reference announcement and the item it announces                    | One occurrence would gain attention and habituation twice. Link the announcement to the target and score the target once                                        | 2.1, 2.6        |
-| Suppress every tray item from attention                                          | Some transient occurrences exist only as tray records. Those records must produce percepts themselves                                                           | 2.1, 11.17      |
-| Stop catch-up at any familiar item, or treat absence from a page as removal      | Neither proves coverage. The stopping boundary needs an ordering guarantee; removal needs complete comparable coverage or explicit history                      | 2.3 §1, 12.8 §7 |
-| A notification-only accuracy score                                               | The unit is a testable statement inside any input Nia might rely on; notifications need no separate estimator                                                   | 9.2             |
-| A single trust score per source                                                  | Accuracy differs by claim kind and tested outcome; truth and citation support must not share a count                                                            | 9.2             |
-| One estimator for every learned quantity                                         | Source accuracy, procedure reliability, simulator scores, durations, response times and coverage answer different questions                                     | 9.2             |
-| Disagreement, acceptance or rejection as a source verdict                        | A decision cannot manufacture its own confirmation; a check needs evidence that tests the statement                                                             | 3.7, 9.2, 13.9  |
-| A missed deadline proves an earlier event never happened                         | A tested bounded promise can fail while historical arrival remains unresolved                                                                                   | 9.2, 12.8 §7    |
-| Automatically distrust an unfamiliar owner                                       | Owner reports support beliefs immediately under a declared prior; Kam need not first pass an audit                                                              | 4.2, 9.2        |
-| Present role priors as measured accuracy                                         | They are assumptions with recorded origin, version and strength, shown apart from actual checks                                                                 | 9.2             |
-| A lower credible bound as factual accuracy                                       | Source accuracy uses the Beta mean; the lower bound remains for procedure deployment                                                                            | 9.2, 4.3        |
-| Stop checking a source once it scores poorly                                     | Recovery and important true claims must remain discoverable                                                                                                     | 9.2, 11.1       |
-| Report every crossing below a prior                                              | Report material failures, persistent service problems and meaningful changes in reliance                                                                        | 9.2             |
+| Proposal                                                                         | Why not                                                                                                                                                         | See              |
+| :------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------- | :--------------- |
+| Do reconsolidation only at sleep, never in the tick                              | A correction from the owner at nine must hold at ten. Instead, percept-driven changes are rate-limited to once a day per fact                                   | 4.7              |
+| Replace the recall veto with guards and drop the recall trigger                  | Guards are primary, but recall of a bad episode must still be able to _open_ a guard on the spot                                                                | 4.3, 7.4         |
+| Treat timers, drives, thoughts and outcomes as installable "system apps"         | This erases the boundary between self and world; they share the envelope with `internal: true` and are not installable                                          | 2.1              |
+| Let salience filter alone; no per-tool notification settings                     | Owners need "mute" (a salience factor) and "stop observing" (a visible blind spot) as two distinct, legible acts                                                | 2.1, 3.1         |
+| An owner-set base glance interval per tool                                       | Tools are too varied. Intervals are learned per place from a change model, and the owner keeps limits only                                                      | 2.9              |
+| "Look more where I am working" as a universal top-down rule                      | It is not universal. The value of looking is the sum of what is waiting on a place, and reply timing is per person                                              | 2.9              |
+| A separate clock or sense of time                                                | Pace is derived from arrival, completion, queue age and slack, and cycles are recurring expectations                                                            | 6.1, 5.2         |
+| Separate fear and hope memory systems                                            | The sign of an outcome steers _what_ is learned (guards or strategies); no second store is needed                                                               | 6.3              |
+| Fixed veto thresholds                                                            | Thresholds scale with caution (11.14; before that, with global confidence) and guards extinguish by absorption instead                                          | 7.4              |
+| Merge senses and effectors into one "app" step in the tick                       | One package provides observation and action as separate steps with separate permissions                                                                         | 2.1, 8.1         |
+| Tool-namespaced operation ids (`gmail:send`)                                     | Drop-in requires trait-qualified ids on the instance; tool namespaces survive only for extras                                                                   | 8.8              |
+| The word "app" for the installed package                                         | The brainstorm's word was tool, and tool-use is the better brain analogy; "app" is product copy at most                                                         | 0, 8.8           |
+| Deadline buckets for urgency                                                     | Slack (deadline minus now minus remaining work) orders tasks correctly; buckets get long tasks backwards                                                        | 7.2              |
+| A two-way interrupt decision (now or never)                                      | The decision is three-way: now, next checkpoint, after. Most interrupts fit at a step boundary                                                                  | 3.2, 7.2         |
+| Wait for slow calls inside the tick                                              | Glances, screening, interpretation, chunking and deliberation run beside bounded control work, with durable run records before dispatch                         | 1.4, 8.5         |
+| Installs as part of the identity                                                 | The identity is values and boundaries, and it is owner-only; installs are capability records in runtime config                                                  | 6.6, 8.4         |
+| OAuth connection gives every team agent the account                              | Connect, grant, install, use are four steps, and all four must agree at execution                                                                               | 8.4              |
+| A pattern match confirms the facts its `because` links point at                  | That makes an explanation manufacture its own evidence; only an observation that tests the proposition counts                                                   | 4.11, 5.2        |
+| One `Fact` type with `p` for instructions, beliefs and statistics                | There are five kinds with five update rules; an instruction has authority and scope, never a `p`                                                                | 4.2              |
+| Owner statements at `p = 1`, pinned                                              | Authority is not truth. The owner's word is a report with high accuracy, and corrections of behaviour are instructions                                          | 4.2, 4.7         |
+| A global confidence that selects matrix columns                                  | Successful reads could increase permission for unrelated sends. Replaced by per-procedure, per-context reliability bounds and a caution that only tightens      | 6.1, 8.2         |
+| `(successes + 1) / (runs + 2)` as the fast-path number                           | That is a mean, and three runs leave a 41% chance that the rate is under 0.8. The lower credible bound is read instead                                          | 4.3              |
+| "No correction within the window" as success                                     | Silence is `unknown`; `appropriate` needs a confirmation                                                                                                        | 7.7              |
+| Compiling preconditions from the deliberations' citations alone                  | Citations are reported, not causal; the procedure starts narrow and widens by contrast                                                                          | 9.3              |
+| Convergence because the other variants went quiet                                | A variant can stop being chosen because it stopped getting chances; convergence is a choice made with the alternative shown                                     | 4.11             |
+| Automatic acceptance of a `ChangeEvent` at a probability threshold               | There is no model of "the baseline was already wrong"; acceptance comes from an authoritative read, a citing deliberation, or the owner                         | 13.9             |
+| Dating a prior claim at the training cutoff                                      | The cutoff bounds when the claim was learned from above and says nothing about when it was true; `verifiedAt: null`                                             | 4.12             |
+| Working-memory size as a design constraint                                       | It is a default to measure; `widen` exists and costs                                                                                                            | 3.4              |
+| One operation per tick, including read moves                                     | One foreground choice may include a bounded read batch; a selected fast-path procedure may chain within explicit allowances                                     | 7.3, 7.4         |
+| Rebuild working memory every tick as the default                                 | Retained slots avoid repeated retrieval and lost context; reconstruction remains a harness comparison                                                           | 3.4, 11.1        |
+| Refresh recall only when cue words change                                        | Relevant evidence, memory records, priming, applicability and admission can change without new wording; consolidation can invalidate context too                | 4.6              |
+| Count slot residence as a memory access                                          | It would make memory strength depend on cadence; debugger display is not an access either                                                                       | 3.5, 4.5         |
+| Give the tick its whole cadence as a work budget                                 | It leaves no operating margin; the control budget is separate and reserves time for saving progress                                                             | 1.4              |
+| Drop queued input to keep the cadence                                            | It conceals unfinished screening and obligations; pending input survives outside the attention slots with its age visible                                       | 2.3, 3.5         |
+| Heartbeat-only wake-up                                                           | Durable observation-triggered wake-up avoids waiting for the next minute; the heartbeat remains a backstop                                                      | 2.1, 10.3        |
+| A permanent process as the way to persist context                                | Checkpoints and durable tasks preserve committed state; process-held streams still require the job to stay alive                                                | 3.4, 8.5, 10.3   |
+| One procedure step per tick as the default                                       | Promptly completed steps can chain within the budget and allowances; one step per tick remains a comparison to test                                             | 7.3, 7.4, 11.1   |
+| Unrestricted procedure chaining                                                  | Separate durable intents support recovery but do not bound effects; step and write ceilings and checks between steps are required                               | 7.3, 7.4         |
+| Clear working memory on every restart                                            | Restart restores committed context and revalidates it; only actual sleep performs the deliberate reset                                                          | 3.4, 5.3         |
+| Promise five-second reactions or lossless observation from five-second ticks     | Delivery, dispatch, reads, screening, load and cancellation add delay; retained history and coverage still limit what can be observed                           | 1.4, 2.9, 11.1   |
+| Never reading conversation history                                               | Recent turns are episodes of the conversation place and render in a bounded slot; the tape itself is still never replayed                                       | 4.8              |
+| Grace periods from `cost.time` against delayed writes                            | A latency category is not a bound. Fence where the tool can; block conflicting writes where it cannot                                                           | 8.9              |
+| Re-pointing a fact's sources at the compaction block                             | A block is derived. Referenced evidence survives as a stub, and lost evidence is marked lost                                                                    | 5.2 §5           |
+| The sentence "the architecture handles injection before the prompt does"         | It bounds what text can do, not what the model says; the runner's labels and rules are the defence                                                              | 8.6              |
+| Choosing defaults on held-out weeks                                              | A case used to choose is no longer held out; validation chooses, held-out reports once                                                                          | 11.1             |
+| `validUntil` on facts (amended)                                                  | Still rejected as a guessed freshness deadline; declared applicability stated by a source is evidence and is kept                                               | 13.3             |
+| One envelope with a raw payload per source, and notifications as incoming events | It unifies packaging but leaves several input contracts and parsers. Every stimulus is now an observation of state; notifications are items in the tray's state | 2.1–2.3, 11.17   |
+| Continuously publish the whole tool's state                                      | Nia observes navigable places and bounded views. A push may carry a view or a pointer, and the tray draws attention between reads                               | 2.1, 12.3        |
+| Discover new mail by unread status                                               | Read status and Nia's observation history are separate. Discovery uses stable item ids and versions                                                             | 2.1, 2.3 §1      |
+| Score both a reference announcement and the item it announces                    | One occurrence would gain attention and habituation twice. Link the announcement to the target and score the target once                                        | 2.1, 2.6         |
+| Suppress every tray item from attention                                          | Some transient occurrences exist only as tray records. Those records must produce percepts themselves                                                           | 2.1, 11.17       |
+| Stop catch-up at any familiar item, or treat absence from a page as removal      | Neither proves coverage. The stopping boundary needs an ordering guarantee; removal needs complete comparable coverage or explicit history                      | 2.3 §1, 12.8 §7  |
+| A notification-only accuracy score                                               | The unit is a testable statement inside any input Nia might rely on; notifications need no separate estimator                                                   | 9.2              |
+| A single trust score per source                                                  | Accuracy differs by claim kind and tested outcome; truth and citation support must not share a count                                                            | 9.2              |
+| One estimator for every learned quantity                                         | Source accuracy, procedure reliability, simulator scores, durations, response times and coverage answer different questions                                     | 9.2              |
+| Disagreement, acceptance or rejection as a source verdict                        | A decision cannot manufacture its own confirmation; a check needs evidence that tests the statement                                                             | 3.7, 9.2, 13.9   |
+| A missed deadline proves an earlier event never happened                         | A tested bounded promise can fail while historical arrival remains unresolved                                                                                   | 9.2, 12.8 §7     |
+| Automatically distrust an unfamiliar owner                                       | Owner reports support beliefs immediately under a declared prior; Kam need not first pass an audit                                                              | 4.2, 9.2         |
+| Present role priors as measured accuracy                                         | They are assumptions with recorded origin, version and strength, shown apart from actual checks                                                                 | 9.2              |
+| A lower credible bound as factual accuracy                                       | Source accuracy uses the Beta mean; the lower bound remains for procedure deployment                                                                            | 9.2, 4.3         |
+| Stop checking a source once it scores poorly                                     | Recovery and important true claims must remain discoverable                                                                                                     | 9.2, 11.1        |
+| Report every crossing below a prior                                              | Report material failures, persistent service problems and meaningful changes in reliance                                                                        | 9.2              |
+| Shorter engaged cadence while a task is foregrounded                             | Offered by the assistant but not selected by Kam. He chose awaited-result eligibility and bounded live search; the ordinary cadence stays                       | 1.4, 7.10, 11.20 |
+| Every dispatched background completion bypasses cadence                          | External floods could become additional-start floods through glances and screening. A current registered task waiter is required                                | 1.4, 2.9         |
+| Re-anchor cadence after each additional start                                    | Repeated completions could continually postpone the boundary serving ordinary input. Additional starts leave the grid unchanged                                 | 10.3             |
+| Live reads inside a simulator                                                    | They read changing state, require live operation handles and return observations. This violates snapshot isolation and hypothetical result types                | 7.10, 8.1        |
 
 ### 11.10 Decisions from the fifth round: what comes to mind
 
@@ -4778,7 +5166,8 @@ the agent's episodes and knowledge. The assistant, Codex (Astra) and Antigravity
    step by step, the forward model looked one step ahead, dreams rehearsed stimuli, experiments tried operations, and
    reads of history and time were directed. What was missing was one bounded way to build and test a decision across
    ticks. It is added as three requests on the existing `deliberate` prompt, one plan record, one simulator contract and
-   seven rules. No new prompt, no new path through the tick.
+   seven rules. No new prompt, no new path through the tick (amended in 11.20: live search adds the `evaluate` prompt
+   and its own prerequisite path).
 2. **Directed recall** (4.6). The model states what it is looking for; code searches, below the activation threshold,
    with failures included and coverage reported. "Nothing found" means nothing matched, not that it never happened.
 3. **Simulators are declared by tools and kept apart from the world** (7.10, 8.1). Up to three parts: simulate,
@@ -4801,14 +5190,16 @@ the agent's episodes and knowledge. The assistant, Codex (Astra) and Antigravity
    execution reserve and skips the usefulness gate. An optional request runs when the budget covers it with the reserve
    intact and inside positive slack, the request kind has measured usefulness for the task kind, and, for simulate and
    search only, a simulator applies and a plain read could not answer more cheaply and the question is not a factual
-   conflict. Directed recall may run before a read and during a conflict. Priority closeness is not a trigger: it
-   measures importance, not doubt.
+   conflict (amended in 11.20: live search needs no simulator and may gather evidence for a factual conflict). Directed
+   recall may run before a read and during a conflict. Priority closeness is not a trigger: it measures importance, not
+   doubt.
 9. **Brain basis, with its limits** (7.10): forward sweeps at choice points, goal-directed replay, prospective
    representation in model-based choice, planning in the control network, controlled retrieval. These support the
    mechanisms and supply no algorithm, depth or stopping rule.
-10. **Four rungs, each with its own experiment** (11.1, 11.2), in the order recall, plans, one exact simulator, search.
-    B0 gets the same simulators and recall. The harness world and the agent's simulators are separate programs. Six
-    invariants are forbidden actions when broken.
+10. **Four rungs, each with its own experiment** (11.1, 11.2), in the order recall, plans, one exact simulator, search
+    (amended in 11.20: live search has its own prerequisite path and needs no simulator). B0 gets the same simulators
+    and recall. The harness world and the agent's simulators are separate programs. Six invariants are forbidden actions
+    when broken.
 
 ### 11.16 Decisions from the eleventh round: interference
 
@@ -5011,6 +5402,98 @@ proposal with "do it". As in rounds nine, twelve and thirteen, Codex wrote the c
     delay. Delivery, dispatch, pending reads, screening and external cancellation add their own. Numerical settings,
     sustainable arrival load, acceptable delay and the accounting rule for active task time remain open in 11.5.
 
+### 11.20 Decisions from the fifteenth round: the cadence and the agent's own work
+
+Kam asked: "seems like 5sec in between ticks might be very slow if the agent has a lot of work to do. e.g. lookihg for
+something in a document, read section a, then decide to zoom in, then zoom out, then try section b, ..."
+
+The assistant proposed three options: awaited-result eligibility, bounded live search and a shorter engaged cadence. Kam
+chose the first two and said, "I like both. Talk to codex and persist that in the document". Codex qualified the
+decisions with twenty rules. Kam retained the decisions with those qualifications, and Codex wrote the changes for the
+assistant to apply and check mechanically. Settled:
+
+1. **Ordinary cadence and additional eligibility** (1.4, 10.3). Kam wanted outside stimuli gated while the agent's work
+   could continue. The assistant proposed result-driven starts; Codex retained one-second control and five-second
+   cadence defaults, the lease, execution slot, shared team permit and full tick protocol. The control budget bounds
+   duration, not start rate. No overlap is allowed.
+2. **A current registered waiter defines an awaited result** (1.4, 2.9). Codex narrowed the assistant's proposal to a
+   durable task-step dependency at the applicable revision. Deliberation, operations, required checks and final search
+   results may qualify, including failure, cancellation or `unknown` when the step must handle them. Background work
+   needs an explicit waiter; adequate reused reads may gain one atomically. External replies remain ordinary input.
+3. **Wake privilege is runtime metadata** (1.4, 8.5, 11.2; plan AgentRun). Codex required durable destination,
+   dependency generation and disposition, checked in the completion transaction. Payloads and models cannot choose it.
+   Internal search results wake the parent executor. Obsolete results stay recorded without privilege; agent takeover
+   alone does not obsolete a healthy independently owned run. Phase 1 uses synthetic waiters.
+4. **Both wake causes survive races** (10.3; plan Wake, Begin and Close). Codex required agent-first locking and atomic
+   result/wake persistence. Only verified awaited results lower `earliestStartAt` as well as `nextTickAt`. Separate
+   generations and earliest timestamps preserve causes and the ordinary boundary. Duplicate transitions grant no new
+   entitlement; Begin snapshots acknowledgements and Close preserves later arrivals and removes consumed entitlements.
+5. **Retained owners use the normal path** (10.3; plan Release and handoff). The assistant retained continuations. Codex
+   required committed nudges to trigger a durable re-read and permit-queue entry, plus polling when nudges are lost. A
+   running tick finishes first. Locked handoff preserves the completion; released rows remain scannable. Renewal,
+   shutdown, supervision and dispatch recovery keep their owners.
+6. **Additional starts do not move the grid** (10.3; plan Next due time and missed starts). Codex required a segment
+   anchor, cadence and accounting cursor. Ordinary idle wakes and cadence changes start segments; awaited results alone
+   do not. Begin serves the latest due boundary, records earlier misses and coalesces completions. Close accounts for
+   crossed boundaries. Attempts and close make recovery count each boundary once without empty catch-up ticks.
+7. **Gating limits starts, not processing** (1.4, 3.2, 7.2). Codex qualified Kam's outside-input gate: external input
+   cannot alone create an additional start, but available input is processed in one already justified by an awaited
+   result. Attention and scheduling still run, required capacity remains reserved, and the waiting task need not win.
+   Actual sleep retains its checkpoint and interruption rules (5.1).
+8. **Capacity includes additional starts** (10.3; plan Capacity). Codex corrected the cadence-only load estimate.
+   Cadence, idle-wake and additional starts are reported separately and share the durable team cap fairly. Under the
+   initial 250-start limit, 200 ordinary starts leave about 50 additional starts per second. Worker estimates must be
+   remeasured. Throttling retains wakes and work budgets.
+9. **Search has two problem types** (7.5, 7.10). The assistant proposed bounded search over a tool; Codex separated live
+   reads from simulation. Simulation keeps immutable snapshots and isolation. Live search names a versioned reader,
+   resolved instance, starting view, scope, moves, evaluator, goal, constraints and limits. `navigable:search` may name
+   the adapter; it adds no callable operation and cannot be invoked by `simulate`.
+10. **One live search is one executive step** (7.3, 7.10, 12.10). The assistant proposed reducing repeated executive
+    trips; Codex bounded the run to permitted adaptive reads. Code uses the map, priors, proposals and scores. The
+    cursor stays local. Internal boundaries check cancellation and execution authority; ticks retain global scheduling.
+    The run cannot change goals, choose tasks, write, send, acquire leases or deliberate without restriction.
+11. **All cumulative bounds remain** (2.9, 7.1, 7.3). Codex retained ten tool calls, the whole-batch item allowance,
+    total time and cancellation checks. Retries and recovery reads count. Evaluator calls and tokens have separate
+    bounds within the same money and time budgets. Nothing resets on tick, restart, resume or frame change; shared read
+    admission and adequate-read reuse remain binding.
+12. **Every child uses the runner** (8.1; plan Run dispatch and result). Codex required a validated basis, permission
+    decision, durable intent, execution record and outcome per child. Bounded delegated authority is checked before each
+    dispatch, including revisions, policy, grants, tuple and leases. Takeover must adopt or renew that authority.
+    Workers never advance task steps or working memory; Phase 1 remains stub-only.
+13. **Adaptive reads have evolving bases** (7.10, 8.1). Codex kept the initiating basis immutable and required a fresh
+    basis for each read from durably used observations. Search evidence cannot silently revalidate an earlier proposed
+    write. Unrelated relevant changes and pending announcements still matter. A scoped resolving read may proceed
+    without relying on the contested value; all other execution checks apply.
+14. **Read does not grant permission** (8.1, 8.2, 12.4). Codex retained conformance, current matrix, ACL, observation
+    policy, complete authorisation and existing lease requirements (8.9). Required approval stops the search. Validated
+    structure and a covering read-scope rule bind navigation; tainted model proposals remain tainted. The executor has
+    only read capabilities and cannot acquire a control lease internally.
+15. **Language evaluation is a declared job** (4.3, 7.10, 8.5). Codex proposed the fixed versioned `evaluate` contract,
+    supplied by a trait or registered task definition, with bounded criteria from deliberation as data. Outputs keep
+    scores, supported matches, evidence and uncertainty. Calls retain prompts, labels, deadlines and costs. They count
+    against search, task and wallet budgets, not deliberations. Scores supply neither facts nor permission.
+16. **Answers retain evidence and coverage** (7.5, 7.10). Codex required bounded matches, versions, supporting fields or
+    passages, observations, stop reason, coverage, gaps, costs and frontier. Found, sufficient and exhaustive differ.
+    Permission, approval, unavailable-operation and failure outcomes are explicit. The task receives the result; a later
+    tick renders its summary, and the full run remains addressable. Later decisions keep the normal protocol.
+17. **Losing reads are still observations** (2.3 §1, 2.4, 2.9, 7.10). Codex required source provenance and the receptor
+    for every returned view. Local use may precede global perception, but cannot consume its pending consequences.
+    Shared map and change-model updates follow normal observation processing. Scoring replaces neither screening nor
+    interpretation, and a search summary supplies no independent evidence beyond its cited views.
+18. **Child times and provenance survive** (10.1, 13.2, 13.3, 13.5). Codex separated dispatch, external completion,
+    receipt, local use and task consumption while retaining item world time and view source time. Child intents,
+    observations, evaluations and outcomes link to the run and ticks. Compaction preserves versions, scope, domain and
+    evidence. Live reads are not a simultaneous snapshot unless the tool guarantees it.
+19. **Live admission differs from simulation** (7.10). Codex preferred a cheaper known direct read and admitted live
+    search for navigation or content matching, including evidence for factual conflicts. Required checks use the
+    execution reserve; optional searches preserve it and pass separately measured usefulness. Successful paths may
+    compile under existing convergence and promotion rules (5.2 §3, 9.3); language evaluations remain model steps.
+20. **Test the two removed delays separately and together** (1.1, 11.1, 11.2; plan Tests and Metrics). Codex extended
+    the runtime comparison and Search rung with equal capabilities and a two-by-two experiment. Cases include floods,
+    stale waiters, lost nudges, races, overload, changed pages, inaccessible targets and interrupted or crashed
+    searches. Metrics separate causes, claims and retained starts, calls, costs, coverage and delays. Completion and
+    timeliness must hold in every stratum. Phase 1 proves scheduling with synthetic runs and implements no live search.
+
 ---
 
 ## 12. Space and navigation
@@ -5119,19 +5602,27 @@ thousand messages has a view of fifty items and a `more`.
 
 ### 12.4 Moves: navigation is action
 
-A move is a `read`-class operation that changes the current place: open, back, more, follow, go. It goes through the
-runner (8.1) and the trace like any other operation, and it has a completion signal, which is the next view. Three
-things follow from this.
+A move is a `read`-class operation that changes the observed place: open, back, more, follow, go. It goes through the
+runner (8.1) and the trace like any other operation, with the next view as its completion signal. Inside live search,
+the navigation cursor belongs to the run and does not repeatedly replace executive focus (7.10). Three things follow
+from this.
 
-- **Entering a place reads its view.** A move's outcome is the new place's view, and that view is also a glance (2.9),
-  so the map and the change model update on every step.
-- **Moves are safe to try**, which is what makes wandering possible (12.5), and it is why the contract insists that a
-  move never writes. A button that submits a form, a link that archives, a "go" that moves a robot into a wall: these
-  are operations with their own class, and the manual must say so. Marking a write as a move violates the manual's
-  contract, and the conformance suite (8.8) tests for this violation.
-- **Paths are procedures.** When a sequence of moves has reliably got the agent from A to B, it compiles (5.2 §3) into a
-  procedure whose trigger is "I want to be at B", and runs on the fast path thereafter. By the fourth invoice, getting
-  to the invoice attachment is no longer a deliberation.
+- **Entering a place reads its view.** A move's outcome is the new place's view, an observation through the receptor on
+  every step. A low-resolution look may be a glance (2.9); a focused search read need not be. Normal durable observation
+  processing updates the shared map and change model. A search may use its local discoveries before that processing
+  finishes (2.3 §1).
+- **Moves are safe to try**, within their permissions, scope and limits. That is what makes wandering possible (12.5),
+  and it is why the contract insists that a conforming move has no side effects. The current matrix, ACL, observation
+  policy, authorisation tuple and applicable leases still apply (8.1, 8.2, 8.9). Targets bind through validated tool
+  structure and a covering read-scope rule; tainted proposals grant no authority. A button that submits a form, a link
+  that archives, a "go" that moves a robot into a wall: these are operations with their own class, and the manual must
+  say so. Marking a write as a move violates the manual's contract, and the conformance suite (8.8) tests for this
+  violation.
+- **Paths can become procedures.** When a sequence of moves has reliably got the agent from A to B, those repeated
+  successful paths supply evidence for compilation (5.2 §3) into a procedure whose trigger is "I want to be at B". A
+  converged variant becomes a proposal and must pass promotion and reliability checks before using the fast path (9.3).
+  By the fourth invoice, getting to the attachment may already be a promoted procedure rather than a deliberation; a
+  successful search, or the invoice count alone, does not qualify a habit.
 
 ### 12.5 The map in memory
 
@@ -5172,11 +5663,17 @@ the newest message —usually_at→ { order: last }             in thread T-88  
 ```
 
 A **scan path** compiles from these facts. It is a procedure for a place kind that says where to look first, second and
-third, so that a focused read (2.4) of a long page reads the right part of it and not all of it. Screen-reader users
-have exactly these habits per site; the agent builds them per place kind and refines them per instance. These facts are
-also the "where was I" that episodes answer (4.1): an episode's place is a node on the map, and the regions of its items
-are recorded with it. In the stores, `usually_at` is a regularity on a pattern (4.11) whose slot is the place kind; it
-has its own section because it has its own use.
+third, so that a focused read (2.4) of a long page reads the right part of it and not all of it. Live search uses
+`usually_at` priors with the map, declared proposals and evaluator results to choose permitted reads (7.10). A prior
+guides navigation; it neither proves a match nor grants permission. The run can revise its path when a heading misleads
+it or a read reveals another place.
+
+Repeated successful paths can converge into procedure proposals under 5.2 §3 and 9.3. Screen-reader users have exactly
+these habits per site; the agent builds them per place kind and refines them per instance. A compiled language
+evaluation stays an explicit, costed model step. These facts are also the "where was I" that episodes answer (4.1): an
+episode's place is a node on the map, and the regions of its items are recorded with it, including rejected candidates.
+In the stores, `usually_at` is a regularity on a pattern (4.11) whose slot is the place kind; it has its own section
+because it has its own use.
 
 ### 12.7 Provided and inferred
 
@@ -5270,27 +5767,50 @@ Changes to this chapter should be checked against the following dependencies els
 
 ### 12.10 Nia finds the invoice
 
-The first time, in July, it is a deliberation. It starts from "I need the invoice attachment". The map knows
-`inbox —contains→ T-88` (a glance saw it) and nothing more. The agent makes the move `navigable:open(T-88)`. The view
-shows four messages, order 1 to 4, with the newest last (the trait prior for `thread` puts the newest at `order: last`).
-The agent opens message 4. The view shows the body and two items of kind attachment at region `bottom` (trait prior 0.8,
-confirmed). Then comes a focused read of A-2. That is four moves, one deliberation, and six new facts: three
-containment, two `leads_to`, one `usually_at` confirmation.
+The first time, in July, one deliberation starts from "I need the invoice attachment". The map knows
+`inbox —contains→ T-88` from a glance, and nothing more. Nia requests live search with the resolved mailbox instance,
+starting view, permitted thread scope and reads, an invoice evaluator, the goal and bounded limits (7.10). Selecting the
+request uses one foreground choice.
 
-The fourth time, in October, it is a procedure. Its trigger is "want attachment of the newest message in a thread of
-kind invoice". It has one step, which is a bounded batch of three read moves (7.3): `open(thread)`,
-`open(last message)`, `read(attachment at bottom)`. It runs on the fast path with no model call. In the simulated tool,
-all three calls complete and their results are consumed inside one tick's remaining control budget. The measured 300 ms
-illustrates that case; it is not a latency promise.
+The run makes the move `navigable:open(T-88)`. Its view shows four messages, order 1 to 4, with the newest last (the
+trait prior for `thread` puts the newest at `order: last`). Code uses that prior to open message 4. That view shows the
+body and two attachments at the bottom (trait prior 0.8, confirmed). Code selects A-2 from the observed structure and
+reads it. The evaluator checks the invoice criteria against the returned evidence, using code for structural matches and
+a declared language evaluation if needed. This narrated path has three read calls and yields six new facts: three
+containment, two `leads_to`, one `usually_at` confirmation. The views and moves supply containment, route and position
+evidence through normal perception.
 
-Against a real mailbox, each dependent call takes whatever the tool takes. A call that remains in flight ends the task's
-work for that tick; the tick does not wait. Before the next move, Nia consumes the result and checks cancellation, new
-relevant evidence, permissions, guards and the schedule. Every call gets its own basis validation, durable intent and
-monitoring record. The batch keeps its ten-call limit, a default to test, and its total time allowance across ticks;
-neither resets when the tick advances.
+The run returns `found`, with the attachment's place, item version, supporting fields or passages, observation
+references, costs, coverage and frontier. It does not claim to have searched the whole mailbox. Its final result is
+awaited by the task, so it can enable an additional tick without waiting for the ordinary boundary (1.4). A later tick
+consumes the result into bounded focus history. One deliberation plus one search locates the invoice; interpreting it or
+deciding what to send still follows the normal protocol.
 
-The learned map removes the need for deliberation, and the scan path reduces the cost of reading. Together they let the
-agent locate the invoice efficiently, beyond simply knowing that it exists.
+The fourth time, in October, repeated successful paths may have produced a procedure proposal: "want attachment of the
+newest message in a thread of kind invoice". Its read step follows `open(thread)`, `open(last message)`, then
+`read(attachment at bottom)`. It runs on the fast path only after convergence, promotion and reliability checks pass
+(5.2 §3, 9.3). The invoice count alone does not qualify it. Once promoted, it runs on the fast path: in the simulated
+tool, all three calls complete and their results are consumed inside one tick's remaining control budget. The measured
+300 ms illustrates that case; it is not a latency promise. Structural matching can make the path model-free; any
+compiled language evaluation remains a visible model step.
+
+Each mailbox call takes whatever the tool takes. A call that remains in flight ends the task's work for that tick; the
+tick does not wait. In a promoted procedure, before the next move Nia consumes the result and checks cancellation, new
+relevant evidence, permissions, guards and the schedule (7.4). Within the live search, the parent executor consumes the
+durable child result and requests the next legal read through the runner. Each read boundary checks cancellation,
+evolving basis, permissions and execution authority. It is not another global schedule decision. Ticks continue
+attention and scheduling and may suspend or cancel the run.
+
+The whole batch retains its ten-call default to test, total item allowance and total time allowance (7.3). Retries and
+recovery reads count. Evaluator calls and tokens have separate bounded allowances within the same money and time budget.
+No limit resets across ticks or resumptions. Every read keeps its own basis validation, intent, observation, times,
+monitoring record and outcome, even if its candidate loses.
+
+The learned map removes the need for deliberation, and the scan path reduces the cost of reading. Live search removes
+repeated executive trips between reads within the step. Awaited-result eligibility removes cadence waiting between the
+remaining dependent steps. Together they let the agent locate the invoice efficiently, beyond simply knowing that it
+exists. The harness measures their separate and combined effects, including total calls, cost, coverage and interruption
+delay (11.1).
 
 ---
 
@@ -5332,6 +5852,12 @@ Two clocks are kept apart, as they are on percepts (2.5): when something **happe
 **learned** of it (`sensedAt`). "What did I learn on Monday" and "what happened on Monday" are different questions, and
 both can be answered.
 
+A live search keeps these clocks for every read, not only for the parent result (7.10). Preserve each item's world time
+and each view's source timestamp. Record child dispatch, external completion when known, runtime receipt, local search
+use and final task consumption separately (10.1). Receptor consumption may differ from local use. Never date all reads
+at the parent search's completion. Child intents, observations, evaluations and outcomes link to the parent run and the
+ticks that dispatched, monitored or consumed them.
+
 ### 13.3 Facts have histories
 
 A fact records a value **and the times it was observed**. It remains current until a contradictory observation arrives,
@@ -5366,6 +5892,10 @@ minutes. This is the same comparison the glance scheduler makes, made again at a
 
 Values that were current once and are not current now are not deleted. They are the fact's history, and that history is
 what lets Nia say "it moved to nine-thirty some time between Sept 5 and Sept 12" (4.7).
+
+A sequence of live-search reads is not one simultaneous snapshot unless the tool guarantees that consistency. Each
+observation retains its actual version, scope and times. Evaluator scores cannot turn successive live views into a
+snapshot or establish that their values held together (7.10).
 
 ### 13.4 Asking about time
 
@@ -5410,6 +5940,12 @@ mechanics and breadcrumbs as spatial navigation.
 The schedule above is per identity (6.6, `forgetting`): a compliance agent keeps day blocks for a year; a triage agent
 compacts in days. Place is the second key. A thread's episodes compact together, and a whole tool instance can be
 compacted or pruned when the tool is uninstalled. That is the grouping and pruning by space which the map (12.5) needs.
+
+Search-trace compaction preserves referenced child intents, observations, evaluations and outcomes through their durable
+identities and evidence stubs (5.2 §5, 10.1). Retain item versions, supporting fields or passages with context, scope,
+result domain and the distinct times in 13.2. Losing live branches remain actual observations; unexecuted simulation
+branches remain hypothetical. A parent summary does not become independent evidence or replace cited child-read
+evidence. Reference and retention rules still govern deletion.
 
 ### 13.6 Rendering at grain
 

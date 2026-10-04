@@ -59,3 +59,15 @@
     **Answer:** `abe_design.md` 1.4 (the tick as a bounded update to retained state), 3.4 (the checkpoint in
     `AgentState`), 4.6 (recall refreshes when its inputs change), 7.3 and 7.4 (one foreground choice, bounded chaining),
     8.5 and 10.3 (running steps, wake-up, the loop's lifetime), 11.19 (the decisions).
+
+10. The cadence and the agent's own work
+
+    > seems like 5sec in between ticks might be very slow if the agent has a lot of work to do. e.g. lookihg for
+    > something in a document, read section a, then decide to zoom in, then zoom out, then try section b, ...
+
+    **Answer:** `abe_design.md` 1.4 (ordinary cadence and registered awaited results), 7.3 (one bounded adaptive read
+    step and cumulative limits), 7.10 (separate live and simulation search contracts), 10.3 (wake causes, retained
+    owners and unchanged cadence accounting), 11.20 (the decisions); `implementation_plan.md` Phase 1 (synthetic
+    waiters, conditional gate reduction, nudge and polling, tests and metrics). Kam selected awaited-result eligibility
+    and live search; the shorter engaged cadence was not selected. Phase 1 implements scheduling, not tasks or live
+    search.
