@@ -22,12 +22,42 @@ export default ({ children, headerPosition, state }: Props) => {
             appCommonName={state.meta.appCommonName}
             headerPosition={headerPosition}
             headerLinks={[
-                { id: 'writing', label: 'Writing', url: '/' },
-                { id: 'timeless', label: 'Timeless', url: '/timeless-music-from-the-world' },
-                { id: 'lab', label: 'Lab', url: `${blogPaths.lab}/field-lines` },
-                { id: 'about', label: 'About', url: '/about' }
+                {
+                    id: 'writing',
+                    label: 'Writing',
+                    url: '/'
+                },
+                {
+                    id: 'timeless',
+                    label: 'Timeless',
+                    url: '/timeless-music-from-the-world'
+                },
+                {
+                    id: 'lab',
+                    label: 'Lab',
+                    url: `${blogPaths.lab}/field-lines`
+                },
+                {
+                    id: 'about',
+                    label: 'About',
+                    url: '/about'
+                }
             ]}
-            footerLinks={[{ sections: [{ title: 'Follow', links: [{ label: 'RSS', url: '/rss' }] }] }]}
+            footerLinks={[
+                {
+                    sections: [
+                        {
+                            title: 'Follow',
+                            links: [
+                                {
+                                    label: 'RSS',
+                                    url: '/rss'
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]}
             twitterUrl={blogLinks.twitter}
             facebookUrl={blogLinks.facebook}
             logoUrl={staticAssetsManager.getAsset('@blogweb/public/images/colored_logo.png', { width: 220 }).url}

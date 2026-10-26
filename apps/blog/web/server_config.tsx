@@ -25,7 +25,12 @@ const routes: Route[] = [
         handlers: [getFieldLinesCtrl]
     },
     // Homepage, /page/:n, /rss, /editor and every markdown page (writing, evergreen pages, about).
-    ...getBlogRoutes({ blog: { appName: manifest.name, pathPrefix: '' } })
+    ...getBlogRoutes({
+        blog: {
+            appName: manifest.name,
+            pathPrefix: ''
+        }
+    })
 ]
 
 export default createWebClientApi({

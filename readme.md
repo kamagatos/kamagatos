@@ -7,11 +7,11 @@ The personal site of Kamagatos (`apps/blog`), built on the [`@eldon/h`](https://
 Pages are markdown files with front matter under `apps/blog/content`, published into the framework's static content
 models every time the server starts (`syncStaticContentFolder` in `apps/blog/web/server_config.tsx`):
 
-| Folder                    | URL                | Kind                                            |
-| ------------------------- | ------------------ | ----------------------------------------------- |
-| `apps/blog/content/posts` | `/writing/<slug>`  | Dated essays, listed on the homepage and in RSS |
-| `apps/blog/content/pages` | `/<slug>`          | Evergreen pages                                 |
-| `apps/blog/content/*.md`  | `/<slug>`          | Standalone pages such as `/about`               |
+| Folder                    | URL               | Kind                                            |
+| ------------------------- | ----------------- | ----------------------------------------------- |
+| `apps/blog/content/posts` | `/writing/<slug>` | Dated essays, listed on the homepage and in RSS |
+| `apps/blog/content/pages` | `/<slug>`         | Evergreen pages                                 |
+| `apps/blog/content/*.md`  | `/<slug>`         | Standalone pages such as `/about`               |
 
 Front matter keys: `title`, `description` (also the summary shown in listings), `slug`, `date`, `draft: true` to keep a
 page unpublished, `tags`. Interactive essays are React pages under `apps/blog/web/public/js` (see

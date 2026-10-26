@@ -18,7 +18,11 @@ function OrbitField() {
             return
         }
 
-        const pointer = { x: 0, y: 0, active: false }
+        const pointer = {
+            x: 0,
+            y: 0,
+            active: false
+        }
         type Particle = { x: number; y: number; px: number; py: number; vx: number; vy: number }
         let particles: Particle[] = []
         let frame = 0
@@ -55,7 +59,12 @@ function OrbitField() {
             const rect = canvas.getBoundingClientRect()
             ctx.fillStyle = 'rgba(17,23,19,.055)'
             ctx.fillRect(0, 0, rect.width, rect.height)
-            const target = pointer.active ? pointer : { x: rect.width / 2, y: rect.height / 2 }
+            const target = pointer.active
+                ? pointer
+                : {
+                      x: rect.width / 2,
+                      y: rect.height / 2
+                  }
             particles.forEach((p, i) => {
                 p.px = p.x
                 p.py = p.y
