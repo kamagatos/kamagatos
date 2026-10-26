@@ -23,12 +23,26 @@ export const configs = {
                     enableSendingEmails: true
                 },
                 records: [
-                    { name: 'kamagatos.com', serverName: 'kamagatosprod' },
-                    { name: 'www.kamagatos.com', serverName: 'kamagatosprod' },
+                    {
+                        name: 'kamagatos.com',
+                        serverName: 'kamagatosprod'
+                    },
+                    {
+                        name: 'www.kamagatos.com',
+                        serverName: 'kamagatosprod'
+                    },
                     // Served from eldonlabs infrastructure.
-                    { name: 'compass.kamagatos.com', type: 'A', value: ['178.156.178.50'] },
+                    {
+                        name: 'compass.kamagatos.com',
+                        type: 'A',
+                        value: ['178.156.178.50']
+                    },
                     // Gmail for Google Workspace.
-                    { name: 'kamagatos.com', type: 'MX', value: ['1 smtp.google.com'] }
+                    {
+                        name: 'kamagatos.com',
+                        type: 'MX',
+                        value: ['1 smtp.google.com']
+                    }
                 ]
             }
         ]

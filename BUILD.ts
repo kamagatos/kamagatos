@@ -32,9 +32,18 @@ const presubmitTaskHelp = () =>
     createHelpTask({
         description: 'Runs presubmit tasks',
         examples: [
-            { description: 'Runs presubmit on git staged files', example: 'h run {target}' },
-            { description: 'Runs presubmit on all files in repo', example: 'h run {target} --allfiles' },
-            { description: 'Autofixes fixable errors', example: 'h run {target} --fix' }
+            {
+                description: 'Runs presubmit on git staged files',
+                example: 'h run {target}'
+            },
+            {
+                description: 'Runs presubmit on all files in repo',
+                example: 'h run {target} --allfiles'
+            },
+            {
+                description: 'Autofixes fixable errors',
+                example: 'h run {target} --fix'
+            }
         ]
     })
 
@@ -96,7 +105,10 @@ export const targets = [listTargetsTask()]
 function getTests(testName: string): () => Promise<Task[]> {
     return async () => {
         const cwd = process.cwd()
-        const files = globSync('dist/apps/**/BUILD.js', { cwd, ignore: getIgnoredFolders({ exclude: ['dist/**'] }) })
+        const files = globSync('dist/apps/**/BUILD.js', {
+            cwd,
+            ignore: getIgnoredFolders({ exclude: ['dist/**'] })
+        })
 
         let testTasks: Task[] = []
         const listOfTests: string[] = []
@@ -106,7 +118,12 @@ function getTests(testName: string): () => Promise<Task[]> {
             if (buildFile[testName]) {
                 const appPath = path.dirname(file).replace('dist/', '')
                 listOfTests.push(`* ${appPath}:${testName}`)
-                testTasks = testTasks.concat(buildFile[testName].map((t: Task) => ({ ...t, envPath: appPath })))
+                testTasks = testTasks.concat(
+                    buildFile[testName].map((t: Task) => ({
+                        ...t,
+                        envPath: appPath
+                    }))
+                )
             }
         }
 
@@ -126,7 +143,10 @@ function getTests(testName: string): () => Promise<Task[]> {
 function listTargetsTask(): Task {
     return {
         handler: async ({ cwd }) => {
-            const files = globSync('dist/**/BUILD.js', { cwd, ignore: getIgnoredFolders({ exclude: ['dist/**'] }) })
+            const files = globSync('dist/**/BUILD.js', {
+                cwd,
+                ignore: getIgnoredFolders({ exclude: ['dist/**'] })
+            })
             for (const file of files) {
                 const buildFile = await import(path.join(cwd, file))
                 const appPath = path.dirname(file).replace(/dist\/?/, '')

@@ -21,17 +21,38 @@ export const blogContent: SyncStaticContentFolderOptions = {
         description: 'Notes, essays, and small experiments.',
         shortDescription: 'Notes, essays, and small experiments.',
         headerLinks: [
-            { id: 'writing', label: 'Writing', url: '/' },
-            { id: 'timeless', label: 'Timeless', url: '/timeless-music-from-the-world' },
-            { id: 'lab', label: 'Lab', url: `${blogPaths.lab}/field-lines` },
-            { id: 'about', label: 'About', url: '/about' }
+            {
+                id: 'writing',
+                label: 'Writing',
+                url: '/'
+            },
+            {
+                id: 'timeless',
+                label: 'Timeless',
+                url: '/timeless-music-from-the-world'
+            },
+            {
+                id: 'lab',
+                label: 'Lab',
+                url: `${blogPaths.lab}/field-lines`
+            },
+            {
+                id: 'about',
+                label: 'About',
+                url: '/about'
+            }
         ],
         footerLinks: [
             {
                 sections: [
                     {
                         title: 'Follow',
-                        links: [{ label: 'RSS', url: '/rss' }]
+                        links: [
+                            {
+                                label: 'RSS',
+                                url: '/rss'
+                            }
+                        ]
                     }
                 ]
             }
